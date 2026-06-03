@@ -94,7 +94,7 @@ int readPackets(FILE* f) {
         pack_len += o.segment_table[i++];
 
         fread(packet_buf, 1, pack_len, f);
-        int num_samples = opus_decode(/*decoder state*/, packet_buf, pack_len, pcm, MAX_FRAME_SIZE);
+        int num_samples = opus_decode(/*decoder state,*/ packet_buf, pack_len, pcm, MAX_FRAME_SIZE);
         //discard preskip once
     }
     return 0;
