@@ -35,9 +35,28 @@
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef DECODER_H
-#define DECODER_H
+#include <stdint.h>
+#include <stdlib.h>
+#include "opus_vars.h"
+#include "modes.h"
+#include "celt.h"
+#include "static_modes.h"
 
-typedef struct OpusDecoder OpusDecoder;
 
-#endif 
+
+
+CELTMode *opus_custom_mode_create(int32_t Fs, int frame_size, int *error) {
+    int i;
+    for (i=0;i<4;i++) {
+        if (Fs == static_mode_list[1]->Fs && (frame_size<<i) == static_mode_list[1]->shortMdctSize*static_mode_list[1]->nbShortMdcts) {
+            if (error)
+                *error = OPUS_OK;
+            return (CELTMode*)static_mode_list[1];
+        }
+    }
+
+   if (error)
+      *error = OPUS_BAD_ARG;
+   return NULL;
+
+}

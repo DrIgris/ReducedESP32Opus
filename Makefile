@@ -10,23 +10,37 @@ ifeq ($(origin .RECIPEPREFIX), undefined)
 endif
 .RECIPEPREFIX = >
 
+COMPILER := gcc
+CCOPTIONS := -Wall -MMD -MP -std=c99
+
 PCM_OUTPUT_DIR := pcms
 OBJECT_DIR := objs
-PARSE_FILE := opus_parse
-COMPILER := gcc
-CCOPTIONS := -Wall
 
-all: file_handling
+OBJECTS := $(OBJECT_DIR)/celt.o \
+           $(OBJECT_DIR)/modes.o \
+           $(OBJECT_DIR)/decoder.o \
+           $(OBJECT_DIR)/opus_parse.o \
+           $(OBJECT_DIR)/opus_custom.o \
+           $(OBJECT_DIR)/main.o
 
-file_handling: | dirs
-> $(COMPILER) $(CCOPTIONS) -c $(PARSE_FILE).c -o $(OBJECT_DIR)/$(PARSE_FILE).o
+all: $(OBJECT_DIR)/main
 
-dirs:
-> @mkdir -p $(PCM_OUTPUT_DIR)
-> @mkdir -p $(OBJECT_DIR)
+$(OBJECT_DIR)/main: $(OBJECTS) | $(OBJECT_DIR)
+> $(COMPILER) $^ -o $@
+
+$(OBJECT_DIR)/%.o: %.c | $(OBJECT_DIR)
+> $(COMPILER) $(CCOPTIONS) -c $< -o $@
+
+$(OBJECT_DIR):
+> mkdir -p $(OBJECT_DIR)
+
+$(PCM_OUTPUT_DIR):
+> mkdir -p $(PCM_OUTPUT_DIR)
+
+-include $(wildcard $(OBJECT_DIR)/*.d)
 
 clean:
 > @rm -rf $(PCM_OUTPUT_DIR)
 > @rm -rf $(OBJECT_DIR)
 
-.PHONY: all dirs clean
+.PHONY: all clean

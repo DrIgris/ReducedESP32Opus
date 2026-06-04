@@ -35,9 +35,78 @@
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef DECODER_H
-#define DECODER_H
+#ifndef MODES_H
+#define MODES_H
 
-typedef struct OpusDecoder OpusDecoder;
+#include <stdlib.h>
+#include "celt.h"
 
-#endif 
+typedef struct {
+   int size;
+   const int16_t *index;
+   const unsigned char *bits;
+   const unsigned char *caps;
+} PulseCache;
+
+typedef struct {
+    float r;
+    float i;
+}kiss_fft_cpx;
+
+typedef struct {
+   float r;
+   float i;
+}kiss_twiddle_cpx;
+
+#define MAXFACTORS 8
+/* e.g. an fft of length 128 has 4 factors
+ as far as kissfft is concerned
+ 4*4*4*2
+ */
+
+typedef struct kiss_fft_state{
+    int nfft;
+    float scale;
+    int shift;
+    int16_t factors[2*MAXFACTORS];
+    const int16_t *bitrev;
+    const kiss_twiddle_cpx *twiddles;
+} kiss_fft_state;
+
+typedef struct {
+   int n;
+   int maxshift;
+   const kiss_fft_state *kfft[4];
+   const float * __restrict__ trig;
+} mdct_lookup;
+
+
+/** Mode definition (opaque)
+ @brief Mode definition
+ */
+struct OpusCustomMode {
+   int32_t Fs;
+   int          overlap;
+
+   int          nbEBands;
+   int          effEBands;
+   float    preemph[4];
+   const int16_t   *eBands;   /**< Definition for each "pseudo-critical band" */
+
+   int         maxLM;
+   int         nbShortMdcts;
+   int         shortMdctSize;
+
+   int          nbAllocVectors; /**< Number of lines in the matrix below */
+   const unsigned char   *allocVectors;   /**< Number of bits in each band for several rates */
+   const int16_t *logN;
+
+   const float *window;
+   mdct_lookup mdct;
+   PulseCache cache;
+};
+
+
+
+
+#endif
