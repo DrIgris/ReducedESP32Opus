@@ -39,6 +39,7 @@
 #include "stack.h"
 #include "decoder.h"
 #include "opus_vars.h"
+#include "celt.h"
 
 struct OpusDecoder {
    int          celt_dec_offset;
@@ -67,43 +68,28 @@ int opus_decoder_get_size(int channels)
 }
 
 
-// int opus_decoder_init(OpusDecoder *st, int32_t Fs, int channels)
-// {
-//    void *silk_dec;
-//    CELTDecoder *celt_dec;
-//    int ret, silkDecSizeBytes;
+int opus_decoder_init(OpusDecoder *st, int32_t Fs, int channels)
+{
+   void *silk_dec;
+   CELTDecoder *celt_dec;
+   int ret;
 
-//    OPUS_CLEAR((char*)st, opus_decoder_get_size(channels)); //This clears the memory of the decoder struct and makes sure all values are initialized.
-//    /* Initialize SILK encoder */
-//    ret = silk_Get_Decoder_Size(&silkDecSizeBytes);
-//    if (ret)
-//       return OPUS_INTERNAL_ERROR;
+   OPUS_CLEAR((char*)st, opus_decoder_get_size(channels)); //This clears the memory of the decoder struct and makes sure all values are initialized.
 
-//    silkDecSizeBytes = align(silkDecSizeBytes);
-//    st->silk_dec_offset = align(sizeof(OpusDecoder)); // this sets the offset of the silk decoder to be a proper address(the nearest sizeof(void*)) after the declared opus decoder
-//    st->celt_dec_offset = st->silk_dec_offset+silkDecSizeBytes; // this sets the celt offset to be after the offset + the size of the silk decoder. (since we aligned silkdecsize we don't need an align here)
-//    silk_dec = (char*)st+st->silk_dec_offset; // actually assigns the pointer to the silk decoder struct
-//    celt_dec = (CELTDecoder*)((char*)st+st->celt_dec_offset); // assigns the celt decoder pointer
-//    st->stream_channels = st->channels = channels; //channels
+   st->celt_dec_offset = align(sizeof(OpusDecoder)); // this sets the celt offset to be after the offset + the size of the silk decoder. (since we aligned silkdecsize we don't need an align here)
+   celt_dec = (CELTDecoder*)((char*)st+st->celt_dec_offset); // assigns the celt decoder pointer
+   st->stream_channels = st->channels = channels; //channels
+   st->Fs = Fs; //sample rate
 
-//    st->Fs = Fs; //sample rate
-//    st->DecControl.API_sampleRate = st->Fs;
-//    st->DecControl.nChannelsAPI      = st->channels;
+   /* Initialize CELT decoder */
+   ret = celt_decoder_init(celt_dec, Fs, channels); // sets values of celt struct and finds downsampling factor
+   if(ret!=OPUS_OK)return OPUS_INTERNAL_ERROR;
 
-//    /* Reset decoder */
-//    ret = silk_InitDecoder( silk_dec ); // inits silk decoder for mono and/or stereo depending on channel count
-//    if(ret)return OPUS_INTERNAL_ERROR;
+   // celt_dec->signalling = 0;
 
-//    /* Initialize CELT decoder */
-//    ret = celt_decoder_init(celt_dec, Fs, channels); // sets values of celt struct and finds downsampling factor
-//    if(ret!=OPUS_OK)return OPUS_INTERNAL_ERROR;
-
-//    celt_decoder_ctl(celt_dec, CELT_SET_SIGNALLING(0));
-
-//    st->prev_mode = 0;
-//    st->frame_size = Fs/400;
-//    return OPUS_OK;
-// }
+   st->frame_size = Fs/400;
+   return OPUS_OK;
+}
 
 OpusDecoder *opus_decoder_create(int32_t Fs, int channels, int *error) //simply an automatic allocation of mem before initialization.
 {
@@ -128,48 +114,70 @@ OpusDecoder *opus_decoder_create(int32_t Fs, int channels, int *error) //simply 
 }
 
 
-int opus_decode_native(OpusDecoder *st, const unsigned char *data,
-      int len, float *pcm, int frame_size,
-      int self_delimited, int *packet_offset)
+static int opus_decode_frame(OpusDecoder *st, const unsigned char *data,
+      int len, float *pcm)
 {
+   CELTDecoder *celt_dec;
+   int i, celt_ret=0;
+   ec_dec dec;
+
+   int audiosize;
+   int mode;
+   int c;
+   int F2_5, F5, F10, F20;
+   ALLOC_STACK;
+
+   celt_dec = (CELTDecoder*)((char*)st+st->celt_dec_offset);
+   F20 = st->Fs/50;
+   F10 = F20>>1;
+   F5 = F10>>1;
+   F2_5 = F5>>1;
+   audiosize = MAX_FRAME_SIZE;
+   if (data != NULL) //should probably only need/care about this function where it inits decoder val and normalizes
+   {
+      mode = st->mode;
+      ec_dec_init(&dec,(unsigned char*)data,len); //just inits the decoder values and then normalizes val and rng
+   }
+
+   
+   int celt_frame_size = MAX_FRAME_SIZE;
+   /* Decode CELT */
+   celt_ret = celt_decode_with_ec(celt_dec, data, //important call
+                                    len, pcm, celt_frame_size, &dec);
+   
+
+   RESTORE_STACK;
+   return celt_ret < 0 ? celt_ret : audiosize;
+
+}
+
+
+int opus_decode_native(OpusDecoder *st, const unsigned char *data,
+      int len, float *pcm) {
    int i, nb_samples;
    int count, offset;
    unsigned char toc;
    int tot_offset;
-   /* 48 x 2.5 ms = 120 ms */
-   short size[48];
 
+   len--; //account for ToC byte
    tot_offset = 0;
-   st->mode = opus_packet_get_mode(data);
-   st->bandwidth = opus_packet_get_bandwidth(data);
-   st->frame_size = opus_packet_get_samples_per_frame(data, st->Fs);
-   st->stream_channels = opus_packet_get_nb_channels(data);
+   st->mode = MODE_CELT_ONLY; //since we are only doing CELT full band stereo, we can hardcode the mode. 
+   st->bandwidth = OPUS_BANDWIDTH_FULLBAND;
+   st->frame_size = MAX_FRAME_SIZE;
+   st->stream_channels = CHANNELS;
    //set state variables from ToC byte in front of packet (FC in our CELT full band stereo case)
 
-   count = opus_packet_parse_impl(data, len, self_delimited, &toc, NULL, size, &offset); // unncessary for me, count is always 1 frame
-   if (count < 0)
-      return count;
+   data += 1; //Harcoded 1 since ToC byte is always one byte, FC
+   tot_offset += 1;
+   
+   int ret;
+   ret = opus_decode_frame(st, data, len, pcm); //we dont need to subtract nb_samples from frame_size since we are only doing one frame
+   if (ret<0)
+      return ret;
+   tot_offset += len;
+   pcm += ret*st->channels;
 
-   data += offset; // will need to just parse through ToC byte and then move data pointer to the actual start of the frame data
-   tot_offset += offset;
-
-   if (count*st->frame_size > frame_size) // dont need this check either
-      return OPUS_BUFFER_TOO_SMALL;
-   nb_samples=0;
-   for (i=0;i<count;i++) //wont need a for loop since count is always 1 frame
-   {
-      int ret;
-      ret = opus_decode_frame(st, data, size[i], pcm, frame_size-nb_samples); //we dont need to subtract nb_samples from frame_size since we are only doing one frame
-      if (ret<0)
-         return ret;
-      data += size[i]; //the data assignment is just for the multiple call, which we wont be doing
-      tot_offset += size[i];
-      pcm += ret*st->channels;
-      nb_samples += ret;
-   }
-   if (packet_offset != NULL)
-      *packet_offset = tot_offset;
-   return nb_samples;
+   return ret;
 }
 
 
@@ -181,17 +189,17 @@ int opus_decode_native(OpusDecoder *st, const unsigned char *data,
 
 
 int opus_decode(OpusDecoder *st, const unsigned char *data,
-      int len, int16_t *pcm, int frame_size) //doesnt do too much, just does some checks, then throws it to the actual decoder
+      int len, int16_t *pcm) //doesnt do too much, just does some checks, then throws it to the actual decoder
 {
    VARDECL(float, out);
    int ret, i;
    ALLOC_STACK;
 
-   if(frame_size<0)return OPUS_BAD_ARG;
+   if(MAX_FRAME_SIZE<0)return OPUS_BAD_ARG;
 
-   ALLOC(out, frame_size*st->channels, float);
+   ALLOC(out, MAX_FRAME_SIZE*st->channels, float);
 
-   ret = opus_decode_native(st, data, len, out, frame_size, 0, NULL);
+   ret = opus_decode_native(st, data, len, out);
    if (ret > 0)
    {
       for (i=0;i<ret*st->channels;i++)

@@ -39,14 +39,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-//constants
-//Since we know we are downloading the opus file at fullband 48kHz we can set constants for sampling rate etc.
-
-#define SAMPLE_RATE 48000
-#define CHANNELS 2
-#define MAX_FRAME_SIZE 2880
-#define MAX_PACKET_SIZE 1500
+#include "opus_vars.h"
 
 //eventually I will add reading of opus tags to display to lcd
 

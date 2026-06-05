@@ -41,6 +41,10 @@
 #include <stdlib.h>
 #include <math.h>
 
+#undef CHAR_BIT
+#define CHAR_BIT __CHAR_BIT__
+
+
 //return vals
 /** No error @hideinitializer*/
 #define OPUS_OK                0
@@ -61,11 +65,34 @@
 
 //constants
 #define CELT_SIG_SCALE 32768.f
+#define OPUS_RESET_STATE 4028
+
+//Since we know we are downloading the opus file at fullband 48kHz we can set constants for sampling rate etc.
+
+#define SAMPLE_RATE 48000
+#define CHANNELS 2
+#define MAX_FRAME_SIZE 960
+#define MAX_PACKET_SIZE 1275
+
+#define MODE_CELT_ONLY 1002
+#define OPUS_BANDWIDTH_FULLBAND 1105
+
+#define START_BAND 0
+#define END_BAND 21
 
 //functions
    //math
 #define MAX32(a,b) ((a) > (b) ? (a) : (b)) //returns max value
 #define MIN32(a,b) ((a) < (b) ? (a) : (b)) //returns min value
+
+#define EC_CLZ0    ((int)sizeof(unsigned)*CHAR_BIT)
+#define EC_CLZ(_x) (__builtin_clz(_x))
+/*Note that __builtin_clz is not defined when _x==0, according to the gcc
+   documentation (and that of the BSR instruction that implements it on x86).
+  The majority of the time we can never pass it zero.
+  When we need to, it can be special cased.*/
+#define EC_ILOG(_x) (EC_CLZ0-EC_CLZ(_x))
+
    //Decoder
 #define OPUS_CLEAR(dst, n) (memset((dst), 0, (n)*sizeof(*(dst)))) //just sets all bits of specified memory to 0 
 

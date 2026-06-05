@@ -37,7 +37,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include "celt.h"
-#include "modes.h"
+
 
 #define DECODE_BUFFER_SIZE 2048
 #define LPC_ORDER 24
@@ -89,6 +89,59 @@ static inline int opus_custom_decoder_get_size(const CELTMode *mode, int channel
 
 int celt_decoder_get_size(int channels)
 {
-   const CELTMode *mode = opus_custom_mode_create(48000, 960, NULL);
+   const CELTMode *mode = opus_custom_mode_create(SAMPLE_RATE, MAX_FRAME_SIZE, NULL);
    return opus_custom_decoder_get_size(mode, channels);
 }
+
+int celt_decoder_init(CELTDecoder *st, int32_t sampling_rate, int channels)
+{
+   int ret;
+   ret = opus_custom_decoder_init(st, opus_custom_mode_create(SAMPLE_RATE, MAX_FRAME_SIZE, NULL), channels); // just sets elements of struct to proper values
+   if (ret != OPUS_OK)
+      return ret;
+   st->downsample = 1; // simple switch statement (ratio of decoder sample rate to chosen output rate (for my use case always 1))
+   if (st->downsample==0)
+      return OPUS_BAD_ARG;
+   else
+      return OPUS_OK;
+}
+
+int opus_celt_reset_state(CELTDecoder *st) {
+   int i;
+   float *lpc, *oldBandE, *oldLogE, *oldLogE2;
+   lpc = (float*)(st->_decode_mem+(DECODE_BUFFER_SIZE+st->overlap)*st->channels);
+   oldBandE = lpc+st->channels*LPC_ORDER;
+   oldLogE = oldBandE + 2*st->mode->nbEBands;
+   oldLogE2 = oldLogE + 2*st->mode->nbEBands;
+   OPUS_CLEAR((char*)&st->DECODER_RESET_START,
+         opus_custom_decoder_get_size(st->mode, st->channels)-
+         ((char*)&st->DECODER_RESET_START - (char*)st));
+   for (i=0;i<2*st->mode->nbEBands;i++)
+      oldLogE[i]=oldLogE2[i]=-28.f;
+}
+
+
+static inline int opus_custom_decoder_init(CELTDecoder *st, const CELTMode *mode, int channels) {
+
+   if (st==NULL)
+      return OPUS_ALLOC_FAIL;
+
+   OPUS_CLEAR((char*)st, opus_custom_decoder_get_size(mode, channels));
+
+   st->mode = mode;
+   st->overlap = mode->overlap;
+   st->stream_channels = st->channels = channels;
+
+   st->downsample = 1;
+   st->start = START_BAND;
+   st->end = END_BAND;
+   st->signalling = 1;
+
+   st->loss_count = 0;
+
+   opus_celt_reset_state(st);
+
+   return OPUS_OK;
+}
+
+

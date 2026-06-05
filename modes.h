@@ -107,6 +107,4 @@ struct OpusCustomMode {
 };
 
 
-
-
 #endif

@@ -17,10 +17,10 @@ PCM_OUTPUT_DIR := pcms
 OBJECT_DIR := objs
 
 OBJECTS := $(OBJECT_DIR)/celt.o \
-           $(OBJECT_DIR)/modes.o \
            $(OBJECT_DIR)/decoder.o \
+           $(OBJECT_DIR)/entcode.o \
+           $(OBJECT_DIR)/modes.o \
            $(OBJECT_DIR)/opus_parse.o \
-           $(OBJECT_DIR)/opus_custom.o \
            $(OBJECT_DIR)/main.o
 
 all: $(OBJECT_DIR)/main
