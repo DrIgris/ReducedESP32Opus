@@ -41,23 +41,6 @@
 #include "opus_vars.h"
 #include "celt.h"
 
-struct OpusDecoder {
-   int          celt_dec_offset;
-   int          channels;
-   uint32_t   Fs;          /** Sampling rate (at the API level) */
-
-   /* Everything beyond this point gets cleared on a reset */
-#define OPUS_DECODER_RESET_START stream_channels
-   int          stream_channels;
-
-   int          bandwidth;
-   int          mode;
-   int          frame_size;
-   int          prev_redundancy;
-
-   uint32_t  rangeFinal;
-};
-
 
 int opus_decoder_get_size(int channels)
 {

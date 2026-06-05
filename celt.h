@@ -39,20 +39,96 @@
 #define CELT_H
 
 #include "opus_custom.h"
-#include "modes.h"
 #include "opus_vars.h"
 #include "entcode.h"
 
-#define CELTMode OpusCustomMode
+struct OpusCustomDecoder {
+   const OpusCustomMode *mode;
+   int overlap;
+   int channels;
+   int stream_channels;
+
+   int downsample;
+   int start, end;
+   int signalling; 
+
+   /* Everything beyond this point gets cleared on a reset */
+#define DECODER_RESET_START rng
+
+   uint32_t rng;
+   int error;
+   int last_pitch_index;
+   int loss_count;
+   int postfilter_period;
+   int postfilter_period_old;
+   float postfilter_gain;
+   float postfilter_gain_old;
+   int postfilter_tapset;
+   int postfilter_tapset_old;
+
+   float preemph_memD[2];
+
+   float _decode_mem[1]; /* Size = channels*(DECODE_BUFFER_SIZE+mode->overlap) */
+   /* opus_val16 lpc[],  Size = channels*LPC_ORDER */
+   /* opus_val16 oldEBands[], Size = 2*mode->nbEBands */
+   /* opus_val16 oldLogE[], Size = 2*mode->nbEBands */
+   /* opus_val16 oldLogE2[], Size = 2*mode->nbEBands */
+   /* opus_val16 backgroundLogE[], Size = 2*mode->nbEBands */
+};
+
 
 #define CELTDecoder OpusCustomDecoder
+
+#include "modes.h"
+
+#define CELTMode OpusCustomMode
+
+
+#define DECODE_BUFFER_SIZE 2048
+#define LPC_ORDER 24
 
 
 int celt_decoder_get_size(int channels);
 
-
 int celt_decoder_init(CELTDecoder *st, int32_t sampling_rate, int channels);
 
 int celt_decode_with_ec(OpusCustomDecoder * restrict st, const unsigned char *data, int len, float * restrict pcm, int frame_size, ec_dec *dec);
+
+int opus_celt_reset_state(CELTDecoder *st);
+
+
+
+
+static inline int opus_custom_decoder_get_size(const CELTMode *mode, int channels)
+{
+   int size = sizeof(struct CELTDecoder)
+            + (channels*(DECODE_BUFFER_SIZE+mode->overlap)-1)*sizeof(float)
+            + channels*LPC_ORDER*sizeof(float)
+            + 4*2*mode->nbEBands*sizeof(float);
+   return size;
+}
+
+static inline int opus_custom_decoder_init(CELTDecoder *st, const CELTMode *mode, int channels) {
+
+   if (st==NULL)
+      return OPUS_ALLOC_FAIL;
+
+   OPUS_CLEAR((char*)st, opus_custom_decoder_get_size(mode, channels));
+
+   st->mode = mode;
+   st->overlap = mode->overlap;
+   st->stream_channels = st->channels = channels;
+
+   st->downsample = 1;
+   st->start = START_BAND;
+   st->end = END_BAND;
+   st->signalling = 1;
+
+   st->loss_count = 0;
+
+   opus_celt_reset_state(st);
+
+   return OPUS_OK;
+}
 
 #endif

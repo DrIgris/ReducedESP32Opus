@@ -35,20 +35,10 @@
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-//includes
-#include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include "opus_vars.h"
+#include "opus_parse.h"
 
 //eventually I will add reading of opus tags to display to lcd
-
-//typedef / struct
-typedef struct {
-    uint64_t granulepos;
-    uint8_t num_of_segments;
-    uint8_t segment_table[255];
-} Oggs;
 
 //variables
 uint16_t preskip;

@@ -38,8 +38,9 @@
 #ifndef MODES_H
 #define MODES_H
 
-#include <stdlib.h>
+#include <stdint.h>
 #include "celt.h"
+
 
 typedef struct {
    int size;
@@ -105,6 +106,8 @@ struct OpusCustomMode {
    mdct_lookup mdct;
    PulseCache cache;
 };
+
+CELTMode *opus_custom_mode_create(int32_t Fs, int frame_size, int *error);
 
 
 #endif

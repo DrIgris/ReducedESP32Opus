@@ -38,8 +38,9 @@
 #ifndef OPUS_VARS_H
 #define OPUS_VARS_H
 
-#include <stdlib.h>
+#include <stdint.h>
 #include <math.h>
+#include <string.h>
 
 #undef CHAR_BIT
 #define CHAR_BIT __CHAR_BIT__

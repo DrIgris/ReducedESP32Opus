@@ -35,11 +35,7 @@
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <stdint.h>
-#include <stdlib.h>
 #include "opus_vars.h"
-#include "modes.h"
-#include "celt.h"
 #include "static_modes.h"
 
 

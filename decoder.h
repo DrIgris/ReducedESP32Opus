@@ -38,6 +38,34 @@
 #ifndef DECODER_H
 #define DECODER_H
 
+struct OpusDecoder {
+   int          celt_dec_offset;
+   int          channels;
+   uint32_t   Fs;          /** Sampling rate (at the API level) */
+
+   /* Everything beyond this point gets cleared on a reset */
+#define OPUS_DECODER_RESET_START stream_channels
+   int          stream_channels;
+
+   int          bandwidth;
+   int          mode;
+   int          frame_size;
+   int          prev_redundancy;
+
+   uint32_t  rangeFinal;
+};
+
 typedef struct OpusDecoder OpusDecoder;
+
+
+int opus_decoder_get_size(int channels);
+
+int opus_decoder_init(OpusDecoder *st, int32_t Fs, int channels);
+
+OpusDecoder *opus_decoder_create(int32_t Fs, int channels, int *error);
+
+int opus_decode_native(OpusDecoder *st, const unsigned char *data, int len, float *pcm);
+
+int opus_decode(OpusDecoder *st, const unsigned char *data, int len, int16_t *pcm);
 
 #endif 
