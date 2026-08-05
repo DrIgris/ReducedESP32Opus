@@ -53,13 +53,12 @@ int opus_decoder_get_size(int channels)
 
 int opus_decoder_init(OpusDecoder *st, int32_t Fs, int channels)
 {
-   void *silk_dec;
    CELTDecoder *celt_dec;
    int ret;
 
    OPUS_CLEAR((char*)st, opus_decoder_get_size(channels)); //This clears the memory of the decoder struct and makes sure all values are initialized.
 
-   st->celt_dec_offset = align(sizeof(OpusDecoder)); // this sets the celt offset to be after the offset + the size of the silk decoder. (since we aligned silkdecsize we don't need an align here)
+   st->celt_dec_offset = align(sizeof(OpusDecoder)); // this sets the celt offset to be after the offset
    celt_dec = (CELTDecoder*)((char*)st+st->celt_dec_offset); // assigns the celt decoder pointer
    st->stream_channels = st->channels = channels; //channels
    st->Fs = Fs; //sample rate
@@ -78,7 +77,7 @@ OpusDecoder *opus_decoder_create(int32_t Fs, int channels, int *error) //simply 
 {
    int ret;
    OpusDecoder *st;
-   st = (OpusDecoder *)opus_alloc(opus_decoder_get_size(channels));
+   st = (OpusDecoder *)malloc(opus_decoder_get_size(channels));
    if (st == NULL)
    {
       if (error)
@@ -90,7 +89,7 @@ OpusDecoder *opus_decoder_create(int32_t Fs, int channels, int *error) //simply 
       *error = ret;
    if (ret != OPUS_OK)
    {
-      opus_free(st);
+      free(st);
       st = NULL;
    }
    return st;

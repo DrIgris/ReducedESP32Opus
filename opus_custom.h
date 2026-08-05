@@ -49,4 +49,9 @@ typedef struct OpusCustomDecoder OpusCustomDecoder;
     bad */
 typedef struct OpusCustomMode OpusCustomMode;
 
+//Just some identifiers to clarify variable usages
+typedef float celt_sig;
+typedef float celt_norm;
+typedef float celt_ener;
+
 #endif

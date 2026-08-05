@@ -36,5 +36,55 @@
 */
 
 #include "entcode.h"
+#include "mfrngcod.h"
+
+
+static int ec_read_byte(ec_dec *_this){
+  return _this->offs<_this->storage?_this->buf[_this->offs++]:0;
+}
+
+static int ec_read_byte_from_end(ec_dec *_this){
+  return _this->end_offs<_this->storage?
+   _this->buf[_this->storage-++(_this->end_offs)]:0;
+}
+
+//(((int)sizeof(unsigned)*8)-(__builtin_clz(_this->rng)))
+
+static void ec_dec_normalize(ec_dec *_this){
+  /*If the range is too small, rescale it and input some bits.*/
+  while(_this->rng<=EC_CODE_BOT){
+    int sym;
+    _this->nbits_total+=EC_SYM_BITS;
+    _this->rng<<=EC_SYM_BITS;
+    /*Use up the remaining bits from our last symbol.*/
+    sym=_this->rem;
+    /*Read the next value from the input.*/
+    _this->rem=ec_read_byte(_this);
+    /*Take the rest of the bits we need from this new symbol.*/
+    sym=(sym<<EC_SYM_BITS|_this->rem)>>(EC_SYM_BITS-EC_CODE_EXTRA);
+    /*And subtract them from val, capped to be less than EC_CODE_TOP.*/
+    _this->val=((_this->val<<EC_SYM_BITS)+(EC_SYM_MAX&~sym))&(EC_CODE_TOP-1);
+  }
+}
+
+void ec_dec_init(ec_dec *_this,unsigned char *_buf,uint32_t _storage){
+  _this->buf=_buf;
+  _this->storage=_storage;
+  _this->end_offs=0;
+  _this->end_window=0;
+  _this->nend_bits=0;
+  /*This is the offset from which ec_tell() will subtract partial bits.
+    The final value after the ec_dec_normalize() call will be the same as in
+     the encoder, but we have to compensate for the bits that are added there.*/
+  _this->nbits_total=EC_CODE_BITS+1
+   -((EC_CODE_BITS-EC_CODE_EXTRA)/EC_SYM_BITS)*EC_SYM_BITS;
+  _this->offs=0;
+  _this->rng=1U<<EC_CODE_EXTRA;
+  _this->rem=ec_read_byte(_this);
+  _this->val=_this->rng-1-(_this->rem>>(EC_SYM_BITS-EC_CODE_EXTRA));
+  _this->error=0;
+  /*Normalize the interval.*/
+  ec_dec_normalize(_this);
+}
 
 

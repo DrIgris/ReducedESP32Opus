@@ -41,6 +41,8 @@
 #include "opus_custom.h"
 #include "opus_vars.h"
 #include "entcode.h"
+#include "modes.h"
+#include "stack.h"
 
 struct OpusCustomDecoder {
    const OpusCustomMode *mode;
@@ -79,14 +81,13 @@ struct OpusCustomDecoder {
 
 #define CELTDecoder OpusCustomDecoder
 
-#include "modes.h"
-
 #define CELTMode OpusCustomMode
 
 
 #define DECODE_BUFFER_SIZE 2048
 #define LPC_ORDER 24
 
+CELTMode *opus_custom_mode_create(int32_t Fs, int frame_size, int *error);
 
 int celt_decoder_get_size(int channels);
 

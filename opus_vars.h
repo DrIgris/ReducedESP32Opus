@@ -68,6 +68,23 @@
 #define CELT_SIG_SCALE 32768.f
 #define OPUS_RESET_STATE 4028
 
+#define MAX_PERIOD 1024
+
+#define DB_SHIFT 10
+
+#define COMBFILTER_MAXPERIOD 1024
+#define COMBFILTER_MINPERIOD 15
+
+#define SPREAD_NONE       (0)
+#define SPREAD_LIGHT      (1)
+#define SPREAD_NORMAL     (2)
+#define SPREAD_AGGRESSIVE (3)
+static const unsigned char trim_icdf[11] = {126, 124, 119, 109, 87, 41, 19, 9, 4, 2, 0};
+/* Probs: NONE: 21.875%, LIGHT: 6.25%, NORMAL: 65.625%, AGGRESSIVE: 6.25% */
+static const unsigned char spread_icdf[4] = {25, 23, 2, 0};
+static const unsigned char tapset_icdf[3]={2,1,0};
+
+
 //Since we know we are downloading the opus file at fullband 48kHz we can set constants for sampling rate etc.
 
 #define SAMPLE_RATE 48000
@@ -83,8 +100,9 @@
 
 //functions
    //math
-#define MAX32(a,b) ((a) > (b) ? (a) : (b)) //returns max value
-#define MIN32(a,b) ((a) < (b) ? (a) : (b)) //returns min value
+//max and min for general ints
+#define IMIN(a,b) ((a) < (b) ? (a) : (b))  
+#define IMAX(a,b) ((a) > (b) ? (a) : (b)) 
 
 #define EC_CLZ0    ((int)sizeof(unsigned)*CHAR_BIT)
 #define EC_CLZ(_x) (__builtin_clz(_x))
@@ -95,16 +113,25 @@
 #define EC_ILOG(_x) (EC_CLZ0-EC_CLZ(_x))
 
    //Decoder
+/** Copy n bytes of memory from src to dst, allowing overlapping regions. The 0* term
+    provides compile-time type checking */
+#define OPUS_MOVE(dst, src, n) (memmove((dst), (src), (n)*sizeof(*(dst)) + 0*((dst)-(src)) ))
 #define OPUS_CLEAR(dst, n) (memset((dst), 0, (n)*sizeof(*(dst)))) //just sets all bits of specified memory to 0 
 
 //static inline functions
 static inline int16_t FLOAT2INT16(float x)
 {
    x = x*CELT_SIG_SCALE;
-   x = MAX32(x, -32768);
-   x = MIN32(x, 32767);
+   x = IMAX(x, -32768);
+   x = IMIN(x, 32767);
    return (int16_t)((int)(floor(.5+x)));
 }
+
+static inline int align(int i)
+{
+    return (i+sizeof(void *)-1)&-sizeof(void *);
+}
+
 
 
 

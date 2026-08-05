@@ -90,6 +90,13 @@ struct ec_ctx{
    int error;
 };
 
+/*Initializes the decoder.
+  _buf: The input buffer to use.
+  Return: 0 on success, or a negative value on error.*/
+void ec_dec_init(ec_dec *_this,unsigned char *_buf,uint32_t _storage);
+
+
+
 static inline uint32_t ec_range_bytes(ec_ctx *_this){
   return _this->offs;
 }
