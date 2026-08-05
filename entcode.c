@@ -87,4 +87,19 @@ void ec_dec_init(ec_dec *_this,unsigned char *_buf,uint32_t _storage){
   ec_dec_normalize(_this);
 }
 
+int ec_dec_bit_logp(ec_dec *_this,unsigned _logp){
+  uint32_t r;
+  uint32_t d;
+  uint32_t s;
+  int         ret;
+  r=_this->rng;
+  d=_this->val;
+  s=r>>_logp;
+  ret=d<s;
+  if(!ret)_this->val=d-s;
+  _this->rng=ret?s:r-s;
+  ec_dec_normalize(_this);
+  return ret;
+}
+
 

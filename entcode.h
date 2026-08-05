@@ -127,4 +127,7 @@ static inline int ec_tell(ec_ctx *_this){
            rounding error is in the positive direction).*/
 uint32_t ec_tell_frac(ec_ctx *_this);
 
+/* Decode a bit that has a 1/(1<<_logp) probability of being a one */
+int ec_dec_bit_logp(ec_dec *_this,unsigned _logp);
+
 #endif
