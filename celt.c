@@ -38,6 +38,63 @@
 #include <stdint.h>
 #include "celt.h"
 
+static const signed char tf_select_table[4][8] = {
+      {0, -1, 0, -1,    0,-1, 0,-1},
+      {0, -1, 0, -2,    1, 0, 1,-1},
+      {0, -2, 0, -3,    2, 0, 1,-1},
+      {0, -2, 0, -3,    3, 0, 1,-1},
+};
+
+
+static void tf_decode(int start, int end, int isTransient, int *tf_res, int LM, ec_dec *dec)
+{
+   int i, curr, tf_select;
+   int tf_select_rsv;
+   int tf_changed;
+   int logp;
+   uint32_t budget;
+   uint32_t tell;
+
+   budget = dec->storage*8; //similar to laplace decode, we have a budget and must work around it when decoding
+   tell = ec_tell(dec);
+   logp = isTransient ? 2 : 4;
+   tf_select_rsv = LM>0 && tell+logp+1<=budget;
+   budget -= tf_select_rsv;
+   tf_changed = curr = 0;
+   for (i=start;i<end;i++) //since fullband celt this is every band
+   {
+      if (tell+logp<=budget)
+      {
+         curr ^= ec_dec_bit_logp(dec, logp); //Here curr can switch between 0 or 1 depending on an even amount of 1s decoded since its an XOR
+         tell = ec_tell(dec);
+         tf_changed |= curr; //if curr EVER changes throughout the bands
+      } //if we dont have budget to decode we just store the last curr we calculated
+      tf_res[i] = curr;
+      logp = isTransient ? 4 : 5; //for the first logp of the loop we are either at 2 or 4, from every loop on we are 4 or 5
+   }
+   tf_select = 0;
+   if (tf_select_rsv &&
+     tf_select_table[LM][4*isTransient+0+tf_changed] !=
+     tf_select_table[LM][4*isTransient+2+tf_changed])
+   {
+      tf_select = ec_dec_bit_logp(dec, 1);
+   }
+   for (i=start;i<end;i++)
+   {
+      tf_res[i] = tf_select_table[LM][4*isTransient+2*tf_select+tf_res[i]];
+   }
+}
+
+static void init_caps(const CELTMode *m,int *cap,int LM,int C)
+{
+   int i;
+   for (i=0;i<m->nbEBands;i++)
+   {
+      int N;
+      N=(m->eBands[i+1]-m->eBands[i])<<LM;
+      cap[i] = (m->cache.caps[m->nbEBands*(2*LM+C-1)+i]+64)*C*N>>2;
+   }
+}
 
 int celt_decoder_get_size(int channels)
 {
@@ -73,7 +130,21 @@ int opus_celt_reset_state(CELTDecoder *st) {
    return OPUS_OK;
 }
 
-int celt_decode_with_ec(CELTDecoder * restrict st, const unsigned char *data, int len, int16_t * restrict pcm, int frame_size, ec_dec *dec)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int celt_decode_with_ec(CELTDecoder * restrict st, const unsigned char *data, int len, float * restrict pcm, int frame_size, ec_dec *dec)
 {
    int c, i, N;
    int spread_decision;
@@ -93,8 +164,8 @@ int celt_decode_with_ec(CELTDecoder * restrict st, const unsigned char *data, in
    celt_sig *decode_mem[2];
    celt_sig *overlap_mem[2];
    celt_sig *out_syn[2];
-   int16_t *lpc;
-   int16_t *oldBandE, *oldLogE, *oldLogE2, *backgroundLogE;
+   float *lpc;
+   float *oldBandE, *oldLogE, *oldLogE2, *backgroundLogE;
 
    int shortBlocks;
    int isTransient;
@@ -105,7 +176,7 @@ int celt_decode_with_ec(CELTDecoder * restrict st, const unsigned char *data, in
    int codedBands;
    int alloc_trim;
    int postfilter_pitch;
-   int16_t postfilter_gain;
+   float postfilter_gain;
    int intensity=0;
    int dual_stereo=0;
    int32_t total_bits;
@@ -126,7 +197,7 @@ int celt_decode_with_ec(CELTDecoder * restrict st, const unsigned char *data, in
       out_mem[c] = decode_mem[c]+DECODE_BUFFER_SIZE-MAX_PERIOD;
       overlap_mem[c] = decode_mem[c]+DECODE_BUFFER_SIZE;
    } while (++c<CC);
-   lpc = (int16_t*)(st->_decode_mem+(DECODE_BUFFER_SIZE+st->overlap)*CC); //Creating pointer to LPC coefficients in the decode buffer
+   lpc = (float*)(st->_decode_mem+(DECODE_BUFFER_SIZE+st->overlap)*CC); //Creating pointer to LPC coefficients in the decode buffer
    oldBandE = lpc+CC*LPC_ORDER;
    oldLogE = oldBandE + 2*st->mode->nbEBands;
    oldLogE2 = oldLogE + 2*st->mode->nbEBands;
@@ -192,7 +263,7 @@ int celt_decode_with_ec(CELTDecoder * restrict st, const unsigned char *data, in
          qg = ec_dec_bits(dec, 3); //reads 3 bits from the stream to get gain
          if (ec_tell(dec)+2<=total_bits) // if we have 2 bits left in the packet
             postfilter_tapset = ec_dec_icdf(dec, tapset_icdf, 2); //ilter taps to use for the comb filter uses values with table for result
-         postfilter_gain = (.09375f,15)*(qg+1); //quantizes gain to 8 values between 0.09375 and 0.75 QCONST here is just in case fixed point mode is being used
+         postfilter_gain = (.09375f)*(qg+1); //quantizes gain to 8 values between 0.09375 and 0.75 QCONST here is just in case fixed point mode is being used
       }
       tell = ec_tell(dec);
    }
@@ -303,7 +374,7 @@ int celt_decode_with_ec(CELTDecoder * restrict st, const unsigned char *data, in
       for (i=0;i<C*st->mode->nbEBands;i++)
       {
          bandE[i] = 0;
-         oldBandE[i] = -(28.f,DB_SHIFT);
+         oldBandE[i] = -(28.f);
       }
    }
    /* Synthesis */
@@ -381,7 +452,7 @@ int celt_decode_with_ec(CELTDecoder * restrict st, const unsigned char *data, in
       for (i=0;i<2*st->mode->nbEBands;i++)
          oldLogE[i] = oldBandE[i];
       for (i=0;i<2*st->mode->nbEBands;i++)
-         backgroundLogE[i] = IMIN(backgroundLogE[i] + M*(0.001f,DB_SHIFT), oldBandE[i]);
+         backgroundLogE[i] = IMIN(backgroundLogE[i] + M*(0.001f), oldBandE[i]);
    } else {
       for (i=0;i<2*st->mode->nbEBands;i++)
          oldLogE[i] = IMIN(oldLogE[i], oldBandE[i]);
@@ -391,12 +462,12 @@ int celt_decode_with_ec(CELTDecoder * restrict st, const unsigned char *data, in
       for (i=0;i<st->start;i++)
       {
          oldBandE[c*st->mode->nbEBands+i]=0;
-         oldLogE[c*st->mode->nbEBands+i]=oldLogE2[c*st->mode->nbEBands+i]=-(28.f,DB_SHIFT);
+         oldLogE[c*st->mode->nbEBands+i]=oldLogE2[c*st->mode->nbEBands+i]=-(28.f);
       }
       for (i=st->end;i<st->mode->nbEBands;i++)
       {
          oldBandE[c*st->mode->nbEBands+i]=0;
-         oldLogE[c*st->mode->nbEBands+i]=oldLogE2[c*st->mode->nbEBands+i]=-(28.f,DB_SHIFT);
+         oldLogE[c*st->mode->nbEBands+i]=oldLogE2[c*st->mode->nbEBands+i]=-(28.f);
       }
    } while (++c<2);
    st->rng = dec->rng;

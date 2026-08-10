@@ -130,4 +130,31 @@ uint32_t ec_tell_frac(ec_ctx *_this);
 /* Decode a bit that has a 1/(1<<_logp) probability of being a one */
 int ec_dec_bit_logp(ec_dec *_this,unsigned _logp);
 
+
+/*Extracts a raw unsigned integer with a non-power-of-2 range from the stream.
+  The bits must have been encoded with ec_enc_uint().
+  No call to ec_dec_update() is necessary after this call.
+  _ft: The number of integers that can be decoded (one more than the max).
+       This must be at least one, and no more than 2**32-1.
+  Return: The decoded bits.*/
+uint32_t ec_dec_uint(ec_dec *_this,uint32_t _ft);
+
+/*Extracts a sequence of raw bits from the stream.
+  The bits must have been encoded with ec_enc_bits().
+  No call to ec_dec_update() is necessary after this call.
+  _ftb: The number of bits to extract.
+        This must be between 0 and 25, inclusive.
+  Return: The decoded bits.*/
+uint32_t ec_dec_bits(ec_dec *_this,unsigned _ftb);
+
+/*Decodes a symbol given an "inverse" CDF table.
+  No call to ec_dec_update() is necessary after this call.
+  _icdf: The "inverse" CDF, such that symbol s falls in the range
+          [s>0?ft-_icdf[s-1]:0,ft-_icdf[s]), where ft=1<<_ftb.
+         The values must be monotonically non-increasing, and the last value
+          must be 0.
+  _ftb: The number of bits of precision in the cumulative distribution.
+  Return: The decoded symbol s.*/
+int ec_dec_icdf(ec_dec *_this,const unsigned char *_icdf,unsigned _ftb);
+
 #endif

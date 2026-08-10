@@ -102,4 +102,92 @@ int ec_dec_bit_logp(ec_dec *_this,unsigned _logp){
   return ret;
 }
 
+uint32_t ec_dec_uint(ec_dec *_this,uint32_t _ft){
+  unsigned ft;
+  unsigned s;
+  int      ftb;
+  /*In order to optimize EC_ILOG(), it is undefined for the value 0.*/
+  celt_assert(_ft>1);
+  _ft--; //ft is the size of the range, the total number of possible values, so we have to decrement before calling ecILOG to get the relative pos ind
+  ftb=EC_ILOG(_ft); //ec_ilog is the number of bits needed to represent ft, so if ft is 0b0000000000000010011 ftb=5
+  /*
+  to look at why the decrement is important, if we wanted to decode a total of 8 possible values ft=8 which would be 0b0000001000
+  if we didn't decrement ft= 0b0000001000 EC_ILOG = 4, so we need 4 bits to represent 8 values
+  but we only need 3 bits to represent 8 values (0-7) so we decrement ft to get ft=0b0000000111 EC_ILOG = 3 which is correct
+  */
+  if(ftb>EC_UINT_BITS){ //The # of bits needed to decode this many values is greater than can be done in one operation
+    uint32_t t;
+    ftb-=EC_UINT_BITS; //We know that we would need the entire range for decoding part of it
+    ft=(unsigned)(_ft>>ftb)+1; // Shifts to grab the top bits of our ft range to decode first
+    s=ec_decode(_this,ft);
+    ec_dec_update(_this,s,s+1,ft);
+    t=(uint32_t)s<<ftb|ec_dec_bits(_this,ftb); //one operation to decode the lower bits and combine with the decoded top bits
+    if(t<=_ft)return t;
+    _this->error=1;
+    return _ft;
+  }
+  else{ //just decodes normally in one step
+    _ft++;
+    s=ec_decode(_this,(unsigned)_ft);
+    ec_dec_update(_this,s,s+1,(unsigned)_ft);
+    return s;
+  }
+}
+
+uint32_t ec_dec_bits(ec_dec *_this,unsigned _bits){
+  ec_window   window;
+  int         available;
+  uint32_t ret;
+  window=_this->end_window;
+  available=_this->nend_bits;
+  if((unsigned)available<_bits){
+    do{
+      window|=(ec_window)ec_read_byte_from_end(_this)<<available;
+      available+=EC_SYM_BITS;
+    }
+    while(available<=EC_WINDOW_SIZE-EC_SYM_BITS);
+  }
+  ret=(uint32_t)window&(((uint32_t)1<<_bits)-1U);
+  window>>=_bits;
+  available-=_bits;
+  _this->end_window=window;
+  _this->nend_bits=available;
+  _this->nbits_total+=_bits;
+  return ret;
+}
+
+int ec_dec_icdf(ec_dec *_this,const unsigned char *_icdf,unsigned _ftb){ 
+  /*
+  I believe the whole idea is that we use this icdf table to make the encoder efficient. 
+  The encoder can encode the most likely symbols with smaller #s of bits, 
+  since the table creates the largest range at the beginning as it is [2,1,0] and the cost of encoding a bit is log2(rng/width of region)
+  */
+  uint32_t r;
+  uint32_t d;
+  uint32_t s;
+  uint32_t t;
+  int         ret;
+  s=_this->rng;
+  d=_this->val;
+  r=s>>_ftb; //creating 2^ftb equal segments
+  ret=-1;
+  do{ /*
+    looping through the segments, saving t=s to keep as an upper bound
+    then calculating our new lower bound s with r, our slices, and a value from a ICDF table
+    which is a line of values essentially having a negative slope of probability mass. As in, we can see CDFs (especially discrete like this)
+    with an increasing slope up. Where after every check, the probability mass in the next section is cumulative including both
+    the current probability mass and the last we just checked. Our table is reversed wherein we start at the highest prob and slowly remove
+    the probability mass of the last option as.
+    after each caculation we check if our val is less than our new upper bound when it is we found our section with a range of [s, t)
+    */
+    t=s;
+    s=(r*_icdf[++ret]); 
+  }
+  while(d<s);
+  _this->val=d-s; //rebases val to be respective to the start of our range
+  _this->rng=t-s; // rebases range to be [0, t-s) instead of [s, t)
+  ec_dec_normalize(_this);
+  return ret;
+}
+
 

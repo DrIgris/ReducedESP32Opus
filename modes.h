@@ -107,4 +107,42 @@ struct OpusCustomMode {
    PulseCache cache;
 };
 
+struct OpusCustomDecoder {
+   const OpusCustomMode *mode;
+   int overlap;
+   int channels;
+   int stream_channels;
+
+   int downsample;
+   int start, end;
+   int signalling; 
+
+   /* Everything beyond this point gets cleared on a reset */
+#define DECODER_RESET_START rng
+
+   uint32_t rng;
+   int error;
+   int last_pitch_index;
+   int loss_count;
+   int postfilter_period;
+   int postfilter_period_old;
+   float postfilter_gain;
+   float postfilter_gain_old;
+   int postfilter_tapset;
+   int postfilter_tapset_old;
+
+   float preemph_memD[2];
+
+   float _decode_mem[1]; /* Size = channels*(DECODE_BUFFER_SIZE+mode->overlap) */
+   /* opus_val16 lpc[],  Size = channels*LPC_ORDER */
+   /* opus_val16 oldEBands[], Size = 2*mode->nbEBands */
+   /* opus_val16 oldLogE[], Size = 2*mode->nbEBands */
+   /* opus_val16 oldLogE2[], Size = 2*mode->nbEBands */
+   /* opus_val16 backgroundLogE[], Size = 2*mode->nbEBands */
+};
+
+#define CELTDecoder OpusCustomDecoder
+
+#define CELTMode OpusCustomMode
+
 #endif

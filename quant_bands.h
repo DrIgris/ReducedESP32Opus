@@ -35,63 +35,24 @@
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef CELT_H
-#define CELT_H
 
-#include "opus_custom.h"
-#include "opus_vars.h"
-#include "entcode.h"
+#ifndef QUANT_BANDS
+#define QUANT_BANDS
+
 #include "modes.h"
-#include "stack.h"
-#include "quant_bands.h"
-#include "rate.h"
+#include "entcode.h"
+//#include "mathops.h"
 
-#define DECODE_BUFFER_SIZE 2048
-#define LPC_ORDER 24
+void amp2Log2(const CELTMode *m, int effEnd, int end,
+      celt_ener *bandE, float *bandLogE, int C);
 
-CELTMode *opus_custom_mode_create(int32_t Fs, int frame_size, int *error);
+void log2Amp(const CELTMode *m, int start, int end,
+      celt_ener *eBands, const float *oldEBands, int C);
 
-int celt_decoder_get_size(int channels);
+void unquant_coarse_energy(const CELTMode *m, int start, int end, float *oldEBands, int intra, ec_dec *dec, int C, int LM);
 
-int celt_decoder_init(CELTDecoder *st, int32_t sampling_rate, int channels);
+void unquant_fine_energy(const CELTMode *m, int start, int end, float *oldEBands, int *fine_quant, ec_dec *dec, int C);
 
-int celt_decode_with_ec(OpusCustomDecoder * restrict st, const unsigned char *data, int len, float * restrict pcm, int frame_size, ec_dec *dec);
+void unquant_energy_finalise(const CELTMode *m, int start, int end, float *oldEBands, int *fine_quant, int *fine_priority, int bits_left, ec_dec *dec, int C);
 
-int opus_celt_reset_state(CELTDecoder *st);
-
-
-
-
-static inline int opus_custom_decoder_get_size(const CELTMode *mode, int channels)
-{
-   int size = sizeof(struct CELTDecoder)
-            + (channels*(DECODE_BUFFER_SIZE+mode->overlap)-1)*sizeof(float)
-            + channels*LPC_ORDER*sizeof(float)
-            + 4*2*mode->nbEBands*sizeof(float);
-   return size;
-}
-
-static inline int opus_custom_decoder_init(CELTDecoder *st, const CELTMode *mode, int channels) {
-
-   if (st==NULL)
-      return OPUS_ALLOC_FAIL;
-
-   OPUS_CLEAR((char*)st, opus_custom_decoder_get_size(mode, channels));
-
-   st->mode = mode;
-   st->overlap = mode->overlap;
-   st->stream_channels = st->channels = channels;
-
-   st->downsample = 1;
-   st->start = START_BAND;
-   st->end = END_BAND;
-   st->signalling = 1;
-
-   st->loss_count = 0;
-
-   opus_celt_reset_state(st);
-
-   return OPUS_OK;
-}
-
-#endif
+#endif /* QUANT_BANDS */
