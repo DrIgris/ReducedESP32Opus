@@ -132,7 +132,48 @@ int opus_celt_reset_state(CELTDecoder *st) {
 
 
 
+/** Compute the IMDCT and apply window for all sub-frames and
+    all channels in a frame */
+static void compute_inv_mdcts(const CELTMode *mode, int shortBlocks, celt_sig *X,
+      celt_sig * restrict out_mem[],
+      celt_sig * restrict overlap_mem[], int C, int LM)
+{
+   int c;
+   const int N = mode->shortMdctSize<<LM;
+   const int overlap = OVERLAP(mode);
+   VARDECL(float, x);
+   SAVE_STACK;
 
+   ALLOC(x, N+overlap, float);
+   c=0; do {
+      int j;
+      int b;
+      int N2 = N;
+      int B = 1;
+
+      if (shortBlocks)
+      {
+         N2 = mode->shortMdctSize;
+         B = shortBlocks;
+      }
+      /* Prevents problems from the imdct doing the overlap-add */
+      OPUS_CLEAR(x, overlap);
+
+      for (b=0;b<B;b++)
+      {
+         /* IMDCT on the interleaved the sub-frames */
+         clt_mdct_backward(&mode->mdct, &X[b+c*N2*B], x+N2*b, mode->window, overlap, shortBlocks ? mode->maxLM : mode->maxLM-LM, B);
+      }
+
+      for (j=0;j<overlap;j++)
+         out_mem[c][j] = x[j] + overlap_mem[c][j];
+      for (;j<N;j++)
+         out_mem[c][j] = x[j];
+      for (j=0;j<overlap;j++)
+         overlap_mem[c][j] = x[N+j];
+   } while (++c<C);
+   RESTORE_STACK;
+}
 
 
 

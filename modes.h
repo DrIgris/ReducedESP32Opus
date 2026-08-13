@@ -41,6 +41,7 @@
 #include <stdint.h>
 #include "opus_custom.h"
 
+#define OVERLAP(mode) ((mode)->overlap)
 
 typedef struct {
    int size;

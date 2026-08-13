@@ -711,3 +711,96 @@ void quant_all_bands(int encode, const CELTMode *m, int start, int end,
    }
    RESTORE_STACK;
 }
+
+/* This prevents energy collapse for transients with multiple short MDCTs */
+void anti_collapse(const CELTMode *m, celt_norm *X_, unsigned char *collapse_masks, int LM, int C, int size,
+      int start, int end, float *logE, float *prev1logE,
+      float *prev2logE, int *pulses, uint32_t seed)
+{
+   int c, i, j, k;
+   for (i=start;i<end;i++)
+   {
+      int N0;
+      float thresh, sqrt_1;
+      int depth;
+
+
+      N0 = m->eBands[i+1]-m->eBands[i];
+      /* depth in 1/8 bits */
+      depth = (1+pulses[i])/((m->eBands[i+1]-m->eBands[i])<<LM);
+
+      thresh = .5f*celt_exp2(-.125f*depth);
+      sqrt_1 = celt_rsqrt(N0<<LM);
+      c=0; do
+      {
+         celt_norm *X;
+         float prev1;
+         float prev2;
+         float Ediff;
+         float r;
+         int renormalize=0;
+         prev1 = prev1logE[c*m->nbEBands+i];
+         prev2 = prev2logE[c*m->nbEBands+i];
+         if (C==1)
+         {
+            prev1 = IMAX(prev1,prev1logE[m->nbEBands+i]);
+            prev2 = IMAX(prev2,prev2logE[m->nbEBands+i]);
+         }
+         Ediff = (logE[c*m->nbEBands+i])-(IMIN(prev1,prev2));
+         Ediff = IMAX(0, Ediff);
+         /* r needs to be multiplied by 2 or 2*sqrt(2) depending on LM because
+            short blocks don't have the same energy as long */
+         r = 2.f*celt_exp2(-Ediff);
+         if (LM==3)
+            r *= 1.41421356f;
+         r = IMIN(thresh, r);
+         r = r*sqrt_1;
+         X = X_+c*size+(m->eBands[i]<<LM);
+         for (k=0;k<1<<LM;k++)
+         {
+            /* Detect collapse */
+            if (!(collapse_masks[i*C+c]&1<<k))
+            {
+               /* Fill with noise */
+               for (j=0;j<N0;j++)
+               {
+                  seed = celt_lcg_rand(seed);
+                  X[(j<<LM)+k] = (seed&0x8000 ? r : -r);
+               }
+               renormalize = 1;
+            }
+         }
+         /* We just added some energy, so we need to renormalise */
+         if (renormalize)
+            renormalise_vector(X, N0<<LM, 1.0f);
+      } while (++c<C);
+   }
+}
+
+/* De-normalise the energy to produce the synthesis from the unit-energy bands */
+void denormalise_bands(const CELTMode *m, const celt_norm * restrict X, celt_sig * restrict freq, const celt_ener *bandE, int end, int C, int M)
+{
+   int i, c, N;
+   const int16_t *eBands = m->eBands;
+   N = M*m->shortMdctSize;
+   celt_assert2(C<=2, "denormalise_bands() not implemented for >2 channels");
+   c=0; do {
+      celt_sig * restrict f;
+      const celt_norm * restrict x;
+      f = freq+c*N;
+      x = X+c*N;
+      for (i=0;i<end;i++)
+      {
+         int j, band_end;
+         float g = bandE[i+c*m->nbEBands];
+         j=M*eBands[i];
+         band_end = M*eBands[i+1];
+         do {
+            *f++ = *x * g; //literally just the unit vectors x being multiplied by their respective amplitude g
+            x++;
+         } while (++j<band_end);
+      }
+      for (i=M*eBands[end];i<N;i++)
+         *f++ = 0;
+   } while (++c<C);
+}

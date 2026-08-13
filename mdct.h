@@ -34,36 +34,31 @@
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef BANDS_H
-#define BANDS_H
+/* This is a simple MDCT implementation that uses a N/4 complex FFT
+   to do most of the work. It should be relatively straightforward to
+   plug in pretty much and FFT here.
+
+   This replaces the Vorbis FFT (and uses the exact same API), which
+   was a bit too messy and that was ending up duplicating code
+   (might as well use the same FFT everywhere).
+
+   The algorithm is similar to (and inspired from) Fabrice Bellard's
+   MDCT implementation in FFMPEG, but has differences in signs, ordering
+   and scaling in many places.
+*/
+
+#ifndef MDCT_H
+#define MDCT_H
 
 #include "modes.h"
 #include "stack.h"
-#include "entcode.h"
-#include "rate.h"
 #include "opus_vars.h"
 
+void opus_ifft(const kiss_fft_state *cfg,const kiss_fft_cpx *fin,kiss_fft_cpx *fout);
 
-/** Quantisation/encoding of the residual spectrum
- * @param m Mode data
- * @param X Residual (normalised)
- * @param total_bits Total number of bits that can be used for the frame (including the ones already spent)
- * @param enc Entropy encoder
- */
-void quant_all_bands(int encode, const CELTMode *m, int start, int end,
-      celt_norm * X, celt_norm * Y, unsigned char *collapse_masks, const celt_ener *bandE, int *pulses,
-      int time_domain, int fold, int dual_stereo, int intensity, int *tf_res,
-      int32_t total_bits, int32_t balance, ec_ctx *ec, int M, int codedBands, uint32_t *seed);
-
-void anti_collapse(const CELTMode *m, celt_norm *X_, unsigned char *collapse_masks, int LM, int C, int size,
-      int start, int end, float *logE, float *prev1logE,
-      float *prev2logE, int *pulses, uint32_t seed);
-
-/** Denormalise each band of X to restore full amplitude
- * @param m Mode data
- * @param X Spectrum (returned de-normalised)
- * @param bands Square root of the energy for each band
- */
-void denormalise_bands(const CELTMode *m, const celt_norm * restrict X, celt_sig * restrict freq, const celt_ener *bandE, int end, int C, int M);
+/** Compute a backward MDCT (no scaling) and performs weighted overlap-add
+    (scales implicitly by 1/2) */
+void clt_mdct_backward(const mdct_lookup *l, float *in, float *out,
+      const float * restrict window, int overlap, int shift, int stride);
 
 #endif

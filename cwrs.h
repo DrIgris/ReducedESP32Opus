@@ -1,6 +1,6 @@
 /* Copyright (c) 2007-2012 IETF Trust, CSIRO, Xiph.Org Foundation,
-                           Gregory Maxwell. All rights reserved.
-   Written by Jean-Marc Valin and Gregory Maxwell */
+                           Timothy B. Terriberry. All rights reserved.
+   Written by Timothy B. Terriberry and Jean-Marc Valin */
 /*
 
    This file is extracted from RFC6716. Please see that RFC for additional
@@ -35,64 +35,15 @@
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef CELT_H
-#define CELT_H
+#ifndef CWRS_H
+#define CWRS_H
 
-#include "opus_custom.h"
-#include "opus_vars.h"
-#include "entcode.h"
-#include "modes.h"
 #include "stack.h"
-#include "quant_bands.h"
-#include "rate.h"
-#include "bands.h"
-
-#define DECODE_BUFFER_SIZE 2048
-#define LPC_ORDER 24
-
-CELTMode *opus_custom_mode_create(int32_t Fs, int frame_size, int *error);
-
-int celt_decoder_get_size(int channels);
-
-int celt_decoder_init(CELTDecoder *st, int32_t sampling_rate, int channels);
-
-int celt_decode_with_ec(OpusCustomDecoder * restrict st, const unsigned char *data, int len, float * restrict pcm, int frame_size, ec_dec *dec);
-
-int opus_celt_reset_state(CELTDecoder *st);
+#include "entcode.h"
 
 
+void get_required_bits(int16_t *bits, int N, int K, int frac);
 
+void decode_pulses(int *_y, int N, int K, ec_dec *dec);
 
-static inline int opus_custom_decoder_get_size(const CELTMode *mode, int channels)
-{
-   int size = sizeof(struct CELTDecoder)
-            + (channels*(DECODE_BUFFER_SIZE+mode->overlap)-1)*sizeof(float)
-            + channels*LPC_ORDER*sizeof(float)
-            + 4*2*mode->nbEBands*sizeof(float);
-   return size;
-}
-
-static inline int opus_custom_decoder_init(CELTDecoder *st, const CELTMode *mode, int channels) {
-
-   if (st==NULL)
-      return OPUS_ALLOC_FAIL;
-
-   OPUS_CLEAR((char*)st, opus_custom_decoder_get_size(mode, channels));
-
-   st->mode = mode;
-   st->overlap = mode->overlap;
-   st->stream_channels = st->channels = channels;
-
-   st->downsample = 1;
-   st->start = START_BAND;
-   st->end = END_BAND;
-   st->signalling = 1;
-
-   st->loss_count = 0;
-
-   opus_celt_reset_state(st);
-
-   return OPUS_OK;
-}
-
-#endif
+#endif /* CWRS_H */
