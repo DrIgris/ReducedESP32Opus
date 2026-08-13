@@ -46,6 +46,7 @@
 #include "quant_bands.h"
 #include "rate.h"
 #include "bands.h"
+#include "mdct.h"
 
 #define DECODE_BUFFER_SIZE 2048
 #define LPC_ORDER 24

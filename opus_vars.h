@@ -105,6 +105,8 @@ static const unsigned char tapset_icdf[3]={2,1,0};
 
 #define MAC16_16(c,a,b)     ((c)+(float)(a)*(float)(b))
 
+#define SCALEOUT(a)     ((a)*(1/CELT_SIG_SCALE))
+
 
 //max and min for general ints
 #define IMIN(a,b) ((a) < (b) ? (a) : (b))  

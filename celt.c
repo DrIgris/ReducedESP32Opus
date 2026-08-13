@@ -96,41 +96,80 @@ static void init_caps(const CELTMode *m,int *cap,int LM,int C)
    }
 }
 
-int celt_decoder_get_size(int channels)
+static void deemphasis(celt_sig *in[], float *pcm, int N, int C, int downsample, const float *coef, celt_sig *mem)
 {
-   const CELTMode *mode = opus_custom_mode_create(SAMPLE_RATE, MAX_FRAME_SIZE, NULL);
-   return opus_custom_decoder_get_size(mode, channels);
+   int c;
+   int count=0;
+   c=0; do {
+      int j;
+      celt_sig * restrict x;
+      float  * restrict y;
+      celt_sig m = mem[c];
+      x =in[c];
+      y = pcm+c;
+      for (j=0;j<N;j++)
+      {
+         celt_sig tmp = *x + m;
+         m = (coef[0] * tmp)
+           - (coef[1] * *x);
+         tmp = (coef[3] * tmp);
+         x++;
+         /* Technically the store could be moved outside of the if because
+            the stores we don't want will just be overwritten */
+         if (count==0)
+            *y = SCALEOUT(tmp);
+         if (++count==downsample)
+         {
+            y+=C;
+            count=0;
+         }
+      }
+      mem[c] = m;
+   } while (++c<C);
 }
 
-int celt_decoder_init(CELTDecoder *st, int32_t sampling_rate, int channels)
+static void comb_filter(float *y, float *x, int T0, int T1, int N,
+      float g0, float g1, int tapset0, int tapset1,
+      const float *window, int overlap)
 {
-   int ret;
-   ret = opus_custom_decoder_init(st, opus_custom_mode_create(SAMPLE_RATE, MAX_FRAME_SIZE, NULL), channels); // just sets elements of struct to proper values
-   if (ret != OPUS_OK)
-      return ret;
-   st->downsample = 1; // simple switch statement (ratio of decoder sample rate to chosen output rate (for my use case always 1))
-   if (st->downsample==0)
-      return OPUS_BAD_ARG;
-   else
-      return OPUS_OK;
-}
-
-int opus_celt_reset_state(CELTDecoder *st) {
    int i;
-   float *lpc, *oldBandE, *oldLogE, *oldLogE2;
-   lpc = (float*)(st->_decode_mem+(DECODE_BUFFER_SIZE+st->overlap)*st->channels);
-   oldBandE = lpc+st->channels*LPC_ORDER;
-   oldLogE = oldBandE + 2*st->mode->nbEBands;
-   oldLogE2 = oldLogE + 2*st->mode->nbEBands;
-   OPUS_CLEAR((char*)&st->DECODER_RESET_START,
-         opus_custom_decoder_get_size(st->mode, st->channels)-
-         ((char*)&st->DECODER_RESET_START - (char*)st));
-   for (i=0;i<2*st->mode->nbEBands;i++)
-      oldLogE[i]=oldLogE2[i]=-28.f;
-   return OPUS_OK;
+   /* printf ("%d %d %f %f\n", T0, T1, g0, g1); */
+   float g00, g01, g02, g10, g11, g12;
+   static const float gains[3][3] = {
+         {(0.3066406250f), (0.2170410156f), (0.1296386719f)},
+         {(0.4638671875f), (0.2680664062f), (0.f)},
+         {(0.7998046875f), (0.1000976562f), (0.f)}};
+   g00 = (g0 * gains[tapset0][0]);
+   g01 = (g0 * gains[tapset0][1]);
+   g02 = (g0 * gains[tapset0][2]);
+   g10 = (g1 * gains[tapset1][0]);
+   g11 = (g1 * gains[tapset1][1]);
+   g12 = (g1 * gains[tapset1][2]);
+   for (i=0;i<overlap;i++)
+   {
+      float f;
+      f = (window[i] * window[i]);
+      y[i] = x[i]
+               + (((1.0f-f) * g00) * x[i-T0])
+               + (((1.0f-f) * g01) * x[i-T0-1])
+               + (((1.0f-f) * g01) * x[i-T0+1])
+               + (((1.0f-f) * g02) * x[i-T0-2])
+               + (((1.0f-f) * g02) * x[i-T0+2])
+               + ((f * g10) * x[i-T1])
+               + ((f * g11) * x[i-T1-1])
+               + ((f * g11) * x[i-T1+1])
+               + ((f * g12) * x[i-T1-2])
+               + ((f * g12) * x[i-T1+2]);
+
+   }
+   for (i=overlap;i<N;i++)
+      y[i] = x[i]
+               + (g10 * x[i-T1])
+               + (g11 * x[i-T1-1])
+               + (g11 * x[i-T1+1])
+               + (g12 * x[i-T1-2])
+               + (g12 * x[i-T1+2]);
 }
-
-
 
 /** Compute the IMDCT and apply window for all sub-frames and
     all channels in a frame */
@@ -174,6 +213,45 @@ static void compute_inv_mdcts(const CELTMode *mode, int shortBlocks, celt_sig *X
    } while (++c<C);
    RESTORE_STACK;
 }
+
+
+
+
+
+int celt_decoder_get_size(int channels)
+{
+   const CELTMode *mode = opus_custom_mode_create(SAMPLE_RATE, MAX_FRAME_SIZE, NULL);
+   return opus_custom_decoder_get_size(mode, channels);
+}
+
+int celt_decoder_init(CELTDecoder *st, int32_t sampling_rate, int channels)
+{
+   int ret;
+   ret = opus_custom_decoder_init(st, opus_custom_mode_create(SAMPLE_RATE, MAX_FRAME_SIZE, NULL), channels); // just sets elements of struct to proper values
+   if (ret != OPUS_OK)
+      return ret;
+   st->downsample = 1; // simple switch statement (ratio of decoder sample rate to chosen output rate (for my use case always 1))
+   if (st->downsample==0)
+      return OPUS_BAD_ARG;
+   else
+      return OPUS_OK;
+}
+
+int opus_celt_reset_state(CELTDecoder *st) {
+   int i;
+   float *lpc, *oldBandE, *oldLogE, *oldLogE2;
+   lpc = (float*)(st->_decode_mem+(DECODE_BUFFER_SIZE+st->overlap)*st->channels);
+   oldBandE = lpc+st->channels*LPC_ORDER;
+   oldLogE = oldBandE + 2*st->mode->nbEBands;
+   oldLogE2 = oldLogE + 2*st->mode->nbEBands;
+   OPUS_CLEAR((char*)&st->DECODER_RESET_START,
+         opus_custom_decoder_get_size(st->mode, st->channels)-
+         ((char*)&st->DECODER_RESET_START - (char*)st));
+   for (i=0;i<2*st->mode->nbEBands;i++)
+      oldLogE[i]=oldLogE2[i]=-28.f;
+   return OPUS_OK;
+}
+
 
 
 
