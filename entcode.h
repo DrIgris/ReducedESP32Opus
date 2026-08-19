@@ -119,6 +119,42 @@ static inline int ec_tell(ec_ctx *_this){
   return _this->nbits_total-EC_ILOG(_this->rng);
 }
 
+
+/*Calculates the cumulative frequency for the next symbol.
+  This can then be fed into the probability model to determine what that
+   symbol is, and the additional frequency information required to advance to
+   the next symbol.
+  This function cannot be called more than once without a corresponding call to
+   ec_dec_update(), or decoding will not proceed correctly.
+  _ft: The total frequency of the symbols in the alphabet the next symbol was
+        encoded with.
+  Return: A cumulative frequency representing the encoded symbol.
+          If the cumulative frequency of all the symbols before the one that
+           was encoded was fl, and the cumulative frequency of all the symbols
+           up to and including the one encoded is fh, then the returned value
+           will fall in the range [fl,fh).*/
+unsigned ec_decode(ec_dec *_this,unsigned _ft);
+
+/*Equivalent to ec_decode() with _ft==1<<_bits.*/
+unsigned ec_decode_bin(ec_dec *_this,unsigned _bits);
+
+/*Advance the decoder past the next symbol using the frequency information the
+   symbol was encoded with.
+  Exactly one call to ec_decode() must have been made so that all necessary
+   intermediate calculations are performed.
+  _fl:  The cumulative frequency of all symbols that come before the symbol
+         decoded.
+  _fh:  The cumulative frequency of all symbols up to and including the symbol
+         decoded.
+        Together with _fl, this defines the range [_fl,_fh) in which the value
+         returned above must fall.
+  _ft:  The total frequency of the symbols in the alphabet the symbol decoded
+         was encoded in.
+        This must be the same as passed to the preceding call to ec_decode().*/
+void ec_dec_update(ec_dec *_this,unsigned _fl,unsigned _fh,unsigned _ft);
+
+
+
 /*Returns the number of bits "used" by the encoded or decoded symbols so far.
   This same number can be computed in either the encoder or the decoder, and is
    suitable for making coding decisions.

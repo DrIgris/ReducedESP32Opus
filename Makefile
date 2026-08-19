@@ -21,7 +21,16 @@ OBJECTS := $(OBJECT_DIR)/celt.o \
            $(OBJECT_DIR)/entcode.o \
            $(OBJECT_DIR)/modes.o \
            $(OBJECT_DIR)/opus_parse.o \
-           $(OBJECT_DIR)/main.o
+           $(OBJECT_DIR)/bands.o \
+           $(OBJECT_DIR)/cwrs.o \
+           $(OBJECT_DIR)/mdct.o \
+           $(OBJECT_DIR)/quant_bands.o \
+           $(OBJECT_DIR)/rate.o \
+           $(OBJECT_DIR)/vq.o \
+           $(OBJECT_DIR)/mathop.o \
+           $(OBJECT_DIR)/laplace.o \
+           $(OBJECT_DIR)/main.o \
+
 
 all: $(OBJECT_DIR)/main
 

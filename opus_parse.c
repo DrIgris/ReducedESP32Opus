@@ -43,7 +43,7 @@
 
 //variables
 uint16_t preskip;
-uint16_t pcm[MAX_FRAME_SIZE * CHANNELS];
+float pcm[MAX_FRAME_SIZE * CHANNELS];
 OpusDecoder* OpDec;
 
 //functions
@@ -101,7 +101,7 @@ int readOggs(FILE* f, Oggs* o){
     return 0;
 }
 
-int readPackets(FILE* f) {
+int readPackets(FILE* f, FILE* out) {
     Oggs o = {0};
     readOggs(f, &o);
 
@@ -117,19 +117,31 @@ int readPackets(FILE* f) {
 
         fread(packet_buf, 1, pack_len, f);
         int num_samples = opus_decode(OpDec, packet_buf, pack_len, pcm);
-        //discard preskip once
+
+        float *out_ptr = pcm;
+        int out_len = num_samples;
+        if(preskip > 0) {
+            int to_drop = preskip < num_samples ? preskip : num_samples;
+            out_ptr = pcm + to_drop * CHANNELS; 
+            out_len = num_samples - to_drop;
+            preskip -= to_drop;
+        }
+
+        if (out_len > 0) {
+            fwrite(out_ptr, sizeof(float), out_len * CHANNELS, out);
+        }
     }
     return 0;
 }
 
-int decodeFile(FILE* f) { //open file in SD card manager file and pass into function
+int decodeFile(FILE* f, FILE* out) { //open file in SD card manager file and pass into function
     
     
     readHead(f);
     readTags(f);
-    readPackets(f);
+    readPackets(f, out);
     while(!feof(f)) {
-        readPackets(f);
+        readPackets(f, out);
     }
     return 0;
 }

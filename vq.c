@@ -36,6 +36,114 @@
 
 #include "vq.h"
 
+static void exp_rotation1(celt_norm *X, int len, int stride, float c, float s)
+{
+   int i;
+   celt_norm *Xptr;
+   Xptr = X;
+   for (i=0;i<len-stride;i++)
+   {
+      celt_norm x1, x2;
+      x1 = Xptr[0];
+      x2 = Xptr[stride];
+      Xptr[stride] = (c * x2) + (s * x1);
+      *Xptr++      = (c * x1) - (s * x2);
+   }
+   Xptr = &X[len-2*stride-1];
+   for (i=len-2*stride-1;i>=0;i--)
+   {
+      celt_norm x1, x2;
+      x1 = Xptr[0];
+      x2 = Xptr[stride];
+      Xptr[stride] = (c * x2) + (s * x1);
+      *Xptr--      = (c * x1) - (s * x2);
+   }
+}
+
+static void exp_rotation(celt_norm *X, int len, int dir, int stride, int K, int spread)
+{
+   static const int SPREAD_FACTOR[3]={15,10,5};
+   int i;
+   float c, s;
+   float gain, theta;
+   int stride2=0;
+   int factor;
+
+   if (2*K>=len || spread==SPREAD_NONE)
+      return;
+   factor = SPREAD_FACTOR[spread-1];
+
+   gain = (float)(len) / (float)(len+factor*K);
+   theta = 0.5f*((gain * gain));
+
+   c = celt_cos_norm(theta);
+   s = celt_cos_norm(1.0f - theta); /*  sin(theta) */
+
+   if (len>=8*stride)
+   {
+      stride2 = 1;
+      /* This is just a simple (equivalent) way of computing sqrt(len/stride) with rounding.
+         It's basically incrementing long as (stride2+0.5)^2 < len/stride. */
+      while ((stride2*stride2+stride2)*stride + (stride>>2) < len)
+         stride2++;
+   }
+   /*NOTE: As a minor optimization, we could be passing around log2(B), not B, for both this and for
+      extract_collapse_mask().*/
+   len /= stride;
+   for (i=0;i<stride;i++)
+   {
+      if (dir < 0)
+      {
+         if (stride2)
+            exp_rotation1(X+i*len, len, stride2, s, c);
+         exp_rotation1(X+i*len, len, 1, c, s);
+      } else {
+         exp_rotation1(X+i*len, len, 1, c, -s);
+         if (stride2)
+            exp_rotation1(X+i*len, len, stride2, s, -c);
+      }
+   }
+}
+
+/** Takes the pitch vector and the decoded residual vector, computes the gain
+    that will give ||p+g*y||=1 and mixes the residual with the pitch. */
+static void normalise_residual(int * restrict iy, celt_norm * restrict X,
+      int N, float Ryy, float gain)
+{
+   int i;
+   float t;
+   float g;
+
+   t = Ryy;
+   g = (celt_rsqrt_norm(t) * gain);
+
+   i=0;
+   do
+      X[i] = g * iy[i];
+   while (++i < N);
+}
+
+static unsigned extract_collapse_mask(int *iy, int N, int B)
+{
+   unsigned collapse_mask;
+   int N0;
+   int i;
+   if (B<=1)
+      return 1;
+   /*NOTE: As a minor optimization, we could be passing around log2(B), not B, for both this and for
+      exp_rotation().*/
+   N0 = N/B;
+   collapse_mask = 0;
+   i=0; do {
+      int j;
+      j=0; do {
+         collapse_mask |= (iy[i*N0+j]!=0)<<i;
+      } while (++j<N0);
+   } while (++i<B);
+   return collapse_mask;
+}
+
+
 /** Decode pulse vector and combine the result with the pitch vector to produce
     the final normalised signal in the current band. */
 unsigned alg_unquant(celt_norm *X, int N, int K, int spread, int B,

@@ -1,6 +1,5 @@
-/* Copyright (c) 2007-2012 IETF Trust, CSIRO, Xiph.Org Foundation,
-                           Gregory Maxwell. All rights reserved.
-   Written by Jean-Marc Valin and Gregory Maxwell */
+/* Copyright (c) 2007-2012 IETF Trust, CSIRO, Xiph.Org Foundation. All rights reserved.
+   Written by Jean-Marc Valin */
 /*
 
    This file is extracted from RFC6716. Please see that RFC for additional
@@ -34,29 +33,20 @@
    NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
+#ifndef LAPLACE_H
+#define LAPLACE_H
 
-#include "opus_parse.h"
-#include <stdio.h>
+#include "entcode.h"
+#include "mathop.h"
 
 
-int main(void) {
-   FILE *f;
-   FILE *out;
+/** Decode a value that is assumed to be the realisation of a
+    Laplace-distributed random process
+ @param dec Entropy decoder state
+ @param fs Probability of 0, multiplied by 32768
+ @param decay Probability of the value +/- 1, multiplied by 16384
+ @return Value decoded
+ */
+int ec_laplace_decode(ec_dec *dec, unsigned fs, int decay);
 
-   out = fopen("out.pcm", "w");
-   f = fopen("ByTheLagoon.opus", "r");
-
-   if (f == NULL) {
-      printf("Error: Could not open file for read.\n");
-      return 1; 
-   }
-
-   if (out == NULL) {
-      printf("Error: Could not open file for write.\n");
-      return 2; 
-   }
-
-   decodeFile(f, out);
-
-   return 0;
-}
+#endif

@@ -135,11 +135,11 @@ struct OpusCustomDecoder {
    float preemph_memD[2];
 
    float _decode_mem[1]; /* Size = channels*(DECODE_BUFFER_SIZE+mode->overlap) */
-   /* opus_val16 lpc[],  Size = channels*LPC_ORDER */
-   /* opus_val16 oldEBands[], Size = 2*mode->nbEBands */
-   /* opus_val16 oldLogE[], Size = 2*mode->nbEBands */
-   /* opus_val16 oldLogE2[], Size = 2*mode->nbEBands */
-   /* opus_val16 backgroundLogE[], Size = 2*mode->nbEBands */
+   /* float lpc[],  Size = channels*LPC_ORDER */
+   /* float oldEBands[], Size = 2*mode->nbEBands */
+   /* float oldLogE[], Size = 2*mode->nbEBands */
+   /* float oldLogE2[], Size = 2*mode->nbEBands */
+   /* float backgroundLogE[], Size = 2*mode->nbEBands */
 };
 
 #define CELTDecoder OpusCustomDecoder

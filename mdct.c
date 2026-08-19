@@ -56,22 +56,22 @@
 
 #define  C_ADD( res, a,b)\
     do { \
-            ((a).r + (b).r)\
-            ((a).i + (b).i)\
+            ((a).r + (b).r);\
+            ((a).i + (b).i);\
             (res).r=(a).r+(b).r;  (res).i=(a).i+(b).i; \
     }while(0)
 
 #define  C_SUB( res, a,b)\
     do { \
-            ((a).r - (b).r)\
-            ((a).i - (b).i)\
+            ((a).r - (b).r);\
+            ((a).i - (b).i);\
             (res).r=(a).r-(b).r;  (res).i=(a).i-(b).i; \
     }while(0)
 
 #define C_ADDTO( res , a)\
     do { \
-            ((res).r + (a).r)\
-            ((res).i + (a).i)\
+            ((res).r + (a).r);\
+            ((res).i + (a).i);\
             (res).r += (a).r;  (res).i += (a).i;\
     }while(0)
 
@@ -327,34 +327,34 @@ void opus_ifft(const kiss_fft_state *st,const kiss_fft_cpx *fin,kiss_fft_cpx *fo
 }
 
 
-void clt_mdct_backward(const mdct_lookup *l, kiss_fft_scalar *in, kiss_fft_scalar * restrict out,
-      const opus_val16 * restrict window, int overlap, int shift, int stride)
+void clt_mdct_backward(const mdct_lookup *l, float *in, float * restrict out,
+      const float * restrict window, int overlap, int shift, int stride)
 {
    int i;
    int N, N2, N4;
    float sine;
-   VARDECL(kiss_fft_scalar, f);
-   VARDECL(kiss_fft_scalar, f2);
+   VARDECL(float, f);
+   VARDECL(float, f2);
    SAVE_STACK;
    N = l->n;
    N >>= shift;
    N2 = N>>1;
    N4 = N>>2;
-   ALLOC(f, N2, kiss_fft_scalar);
-   ALLOC(f2, N2, kiss_fft_scalar);
+   ALLOC(f, N2, float);
+   ALLOC(f2, N2, float);
    /* sin(x) ~= x here */
 
    sine = (float)2*PI*(.125f)/N;
    /* Pre-rotate */
    {
       /* Temp pointers to make it really clear to the compiler what we're doing */
-      const kiss_fft_scalar * restrict xp1 = in;
-      const kiss_fft_scalar * restrict xp2 = in+stride*(N2-1);
-      kiss_fft_scalar * restrict yp = f2;
+      const float * restrict xp1 = in;
+      const float * restrict xp2 = in+stride*(N2-1);
+      float * restrict yp = f2;
       const float *t = &l->trig[0];
       for(i=0;i<N4;i++)
       {
-         kiss_fft_scalar yr, yi;
+         float yr, yi;
          yr = -(*xp2 * t[i<<shift]) + (*xp1 * t[(N4-i)<<shift]);
          yi =  -(*xp2 * t[(N4-i)<<shift]) - (*xp1 * t[i<<shift]);
          /* works because the cos is nearly one */
@@ -370,12 +370,12 @@ void clt_mdct_backward(const mdct_lookup *l, kiss_fft_scalar *in, kiss_fft_scala
 
    /* Post-rotate */
    {
-      kiss_fft_scalar * restrict fp = f;
+      float * restrict fp = f;
       const float *t = &l->trig[0];
 
       for(i=0;i<N4;i++)
       {
-         kiss_fft_scalar re, im, yr, yi;
+         float re, im, yr, yi;
          re = fp[0];
          im = fp[1];
          /* We'd scale up by 2 here, but instead it's done when mixing the windows */
@@ -388,9 +388,9 @@ void clt_mdct_backward(const mdct_lookup *l, kiss_fft_scalar *in, kiss_fft_scala
    }
    /* De-shuffle the components for the middle of the window only */
    {
-      const kiss_fft_scalar * restrict fp1 = f;
-      const kiss_fft_scalar * restrict fp2 = f+N2-1;
-      kiss_fft_scalar * restrict yp = f2;
+      const float * restrict fp1 = f;
+      const float * restrict fp2 = f+N2-1;
+      float * restrict yp = f2;
       for(i = 0; i < N4; i++)
       {
          *yp++ =-*fp1;
@@ -402,11 +402,11 @@ void clt_mdct_backward(const mdct_lookup *l, kiss_fft_scalar *in, kiss_fft_scala
    out -= (N2-overlap)>>1;
    /* Mirror on both sides for TDAC */
    {
-      kiss_fft_scalar * restrict fp1 = f2+N4-1;
-      kiss_fft_scalar * restrict xp1 = out+N2-1;
-      kiss_fft_scalar * restrict yp1 = out+N4-overlap/2;
-      const opus_val16 * restrict wp1 = window;
-      const opus_val16 * restrict wp2 = window+overlap-1;
+      float * restrict fp1 = f2+N4-1;
+      float * restrict xp1 = out+N2-1;
+      float * restrict yp1 = out+N4-overlap/2;
+      const float * restrict wp1 = window;
+      const float * restrict wp2 = window+overlap-1;
       for(i = 0; i< N4-overlap/2; i++)
       {
          *xp1 = *fp1;
@@ -415,7 +415,7 @@ void clt_mdct_backward(const mdct_lookup *l, kiss_fft_scalar *in, kiss_fft_scala
       }
       for(; i < N4; i++)
       {
-         kiss_fft_scalar x1;
+         float x1;
          x1 = *fp1--;
          *yp1++ +=- (*wp1 * x1);
          *xp1-- +=  (*wp2 * x1);
@@ -424,11 +424,11 @@ void clt_mdct_backward(const mdct_lookup *l, kiss_fft_scalar *in, kiss_fft_scala
       }
    }
    {
-      kiss_fft_scalar * restrict fp2 = f2+N4;
-      kiss_fft_scalar * restrict xp2 = out+N2;
-      kiss_fft_scalar * restrict yp2 = out+N-1-(N4-overlap/2);
-      const opus_val16 * restrict wp1 = window;
-      const opus_val16 * restrict wp2 = window+overlap-1;
+      float * restrict fp2 = f2+N4;
+      float * restrict xp2 = out+N2;
+      float * restrict yp2 = out+N-1-(N4-overlap/2);
+      const float * restrict wp1 = window;
+      const float * restrict wp2 = window+overlap-1;
       for(i = 0; i< N4-overlap/2; i++)
       {
          *xp2 = *fp2;
@@ -437,7 +437,7 @@ void clt_mdct_backward(const mdct_lookup *l, kiss_fft_scalar *in, kiss_fft_scala
       }
       for(; i < N4; i++)
       {
-         kiss_fft_scalar x2;
+         float x2;
          x2 = *fp2++;
          *yp2--  = (*wp1 * x2);
          *xp2++  = (*wp2 * x2);

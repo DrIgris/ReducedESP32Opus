@@ -44,6 +44,8 @@
 #define GLOBAL_STACK_SIZE 100000
 
 extern char *global_stack;
+extern char *global_stack_top;
+
 
 #ifndef OVERRIDE_OPUS_ALLOC_SCRATCH
 static inline void *opus_alloc_scratch (size_t size)

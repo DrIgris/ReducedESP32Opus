@@ -1,6 +1,10 @@
-/* Copyright (c) 2007-2012 IETF Trust, CSIRO, Xiph.Org Foundation,
-                           Gregory Maxwell. All rights reserved.
-   Written by Jean-Marc Valin and Gregory Maxwell */
+/* Copyright (c) 2002-2012 IETF Trust, Jean-Marc Valin, CSIRO,
+                           Xiph.Org Foundation. All rights reserved.
+   Written by Jean-Marc Valin */
+/**
+   @file mathops.h
+   @brief Various math functions
+*/
 /*
 
    This file is extracted from RFC6716. Please see that RFC for additional
@@ -35,28 +39,22 @@
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "opus_parse.h"
-#include <stdio.h>
+#ifndef MATHOPS_H
+#define MATHOPS_H
+
+#include "opus_vars.h"
+
+unsigned isqrt32(uint32_t _val);
 
 
-int main(void) {
-   FILE *f;
-   FILE *out;
+#define PI 3.141592653f
+#define celt_sqrt(x) ((float)sqrt(x))
+#define celt_rsqrt(x) (1.f/celt_sqrt(x))
+#define celt_rsqrt_norm(x) (celt_rsqrt(x))
+#define celt_cos_norm(x) ((float)cos((.5f*PI)*(x)))
+#define celt_rcp(x) (1.f/(x))
+#define celt_log2(x) ((float)(1.442695040888963387*log(x)))
+#define celt_exp2(x) ((float)exp(0.6931471805599453094*(x)))
 
-   out = fopen("out.pcm", "w");
-   f = fopen("ByTheLagoon.opus", "r");
 
-   if (f == NULL) {
-      printf("Error: Could not open file for read.\n");
-      return 1; 
-   }
-
-   if (out == NULL) {
-      printf("Error: Could not open file for write.\n");
-      return 2; 
-   }
-
-   decodeFile(f, out);
-
-   return 0;
-}
+#endif /* MATHOPS_H */

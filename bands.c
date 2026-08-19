@@ -37,12 +37,226 @@
 #include "bands.h"
 
 
+/* Indexing table for converting from natural Hadamard to ordery Hadamard
+   This is essentially a bit-reversed Gray, on top of which we've added
+   an inversion of the order because we want the DC at the end rather than
+   the beginning. The lines are for N=2, 4, 8, 16 */
+static const int ordery_table[] = {
+       1,  0,
+       3,  0,  2,  1,
+       7,  0,  4,  3,  6,  1,  5,  2,
+      15,  0,  8,  7, 12,  3, 11,  4, 14,  1,  9,  6, 13,  2, 10,  5,
+};
+
+/* This is a cos() approximation designed to be bit-exact on any platform. Bit exactness
+   with this approximation is important because it has an impact on the bit allocation */
+static int16_t bitexact_cos(int16_t x)
+{
+   int32_t tmp;
+   int16_t x2;
+   tmp = (4096+((int32_t)(x)*(x)))>>13;
+   celt_assert(tmp<=32767);
+   x2 = tmp;
+   x2 = (32767-x2) + (x2 * (-7651 + (x2 * (8277 + (-626 * x2)))));
+   celt_assert(x2<=32766);
+   return 1+x2;
+}
+
+static int bitexact_log2tan(int isin,int icos)
+{
+   int lc;
+   int ls;
+   lc=EC_ILOG(icos);
+   ls=EC_ILOG(isin);
+   icos<<=15-lc;
+   isin<<=15-ls;
+   return (ls-lc)*(1<<11)
+         + (isin * (isin * -2597) + 7932)
+         - (icos * (icos * -2597) + 7932);
+}
+
+void haar1(celt_norm *X, int N0, int stride)
+{
+   int i, j;
+   N0 >>= 1;
+   for (i=0;i<stride;i++)
+      for (j=0;j<N0;j++)
+      {
+         celt_norm tmp1, tmp2;
+         tmp1 = (.70710678f * X[stride*2*j+i]);
+         tmp2 = (.70710678f * X[stride*(2*j+1)+i]);
+         X[stride*2*j+i] = tmp1 + tmp2;
+         X[stride*(2*j+1)+i] = tmp1 - tmp2;
+      }
+}
+
+uint32_t celt_lcg_rand(uint32_t seed)
+{
+   return 1664525 * seed + 1013904223;
+}
+
+static void deinterleave_hadamard(celt_norm *X, int N0, int stride, int hadamard)
+{
+   int i,j;
+   VARDECL(celt_norm, tmp);
+   int N;
+   SAVE_STACK;
+   N = N0*stride;
+   ALLOC(tmp, N, celt_norm);
+   celt_assert(stride>0);
+   if (hadamard)
+   {
+      const int *ordery = ordery_table+stride-2;
+      for (i=0;i<stride;i++)
+      {
+         for (j=0;j<N0;j++)
+            tmp[ordery[i]*N0+j] = X[j*stride+i];
+      }
+   } else {
+      for (i=0;i<stride;i++)
+         for (j=0;j<N0;j++)
+            tmp[i*N0+j] = X[j*stride+i];
+   }
+   for (j=0;j<N;j++)
+      X[j] = tmp[j];
+   RESTORE_STACK;
+}
+
+static void interleave_hadamard(celt_norm *X, int N0, int stride, int hadamard)
+{
+   int i,j;
+   VARDECL(celt_norm, tmp);
+   int N;
+   SAVE_STACK;
+   N = N0*stride;
+   ALLOC(tmp, N, celt_norm);
+   if (hadamard)
+   {
+      const int *ordery = ordery_table+stride-2;
+      for (i=0;i<stride;i++)
+         for (j=0;j<N0;j++)
+            tmp[j*stride+i] = X[ordery[i]*N0+j];
+   } else {
+      for (i=0;i<stride;i++)
+         for (j=0;j<N0;j++)
+            tmp[j*stride+i] = X[i*N0+j];
+   }
+   for (j=0;j<N;j++)
+      X[j] = tmp[j];
+   RESTORE_STACK;
+}
+
+static int compute_qn(int N, int b, int offset, int pulse_cap, int stereo)
+{
+   static const int16_t exp2_table8[8] =
+      {16384, 17866, 19483, 21247, 23170, 25267, 27554, 30048};
+   int qn, qb;
+   int N2 = 2*N-1;
+   if (stereo && N==2)
+      N2--;
+   /* The upper limit ensures that in a stereo split with itheta==16384, we'll
+       always have enough bits left over to code at least one pulse in the
+       side; otherwise it would collapse, since it doesn't get folded. */
+   qb = IMIN(b-pulse_cap-(4<<BITRES), (b+N2*offset)/N2);
+
+   qb = IMIN(8<<BITRES, qb);
+
+   if (qb<(1<<BITRES>>1)) {
+      qn = 1;
+   } else {
+      qn = exp2_table8[qb&0x7]>>(14-(qb>>BITRES));
+      qn = (qn+1)>>1<<1;
+   }
+   celt_assert(qn <= 256);
+   return qn;
+}
+
+static void intensity_stereo(const CELTMode *m, celt_norm *X, celt_norm *Y, const celt_ener *bandE, int bandID, int N)
+{
+   int i = bandID;
+   int j;
+   float a1, a2;
+   float left, right;
+   float norm;
+
+   left = bandE[i];
+   right = bandE[i+m->nbEBands];
+   norm = EPSILON + celt_sqrt(EPSILON+(left * left)+(right * right));
+   a1 = left / norm;
+   a2 = right / norm;
+   for (j=0;j<N;j++)
+   {
+      celt_norm r, l;
+      l = X[j];
+      r = Y[j];
+      X[j] = (a1 * l) + (a2 * r);
+      /* Side is not encoded, no need to calculate */
+   }
+}
+
+static void stereo_split(celt_norm *X, celt_norm *Y, int N)
+{
+   int j;
+   for (j=0;j<N;j++)
+   {
+      celt_norm r, l;
+      l = (.70710678f * X[j]);
+      r = (.70710678f * Y[j]);
+      X[j] = l+r;
+      Y[j] = r-l;
+   }
+}
+
+static void stereo_merge(celt_norm *X, celt_norm *Y, float mid, int N)
+{
+   int j;
+   float xp=0, side=0;
+   float El, Er;
+   float mid2;
+   float t, lgain, rgain;
+
+   /* Compute the norm of X+Y and X-Y as |X|^2 + |Y|^2 +/- sum(xy) */
+   for (j=0;j<N;j++)
+   {
+      xp = MAC16_16(xp, X[j], Y[j]);
+      side = MAC16_16(side, Y[j], Y[j]);
+   }
+   /* Compensating for the mid normalization */
+   xp = mid * xp;
+   /* mid and side are in Q15, not Q14 like X and Y */
+   mid2 = mid;
+   El = (mid2 * mid2) + side - 2*xp;
+   Er = (mid2 * mid2) + side + 2*xp;
+   if (Er < (6e-4f) || El < (6e-4f))
+   {
+      for (j=0;j<N;j++)
+         Y[j] = X[j];
+      return;
+   }
+
+   t = El;
+   lgain = celt_rsqrt_norm(t);
+   t = Er;
+   rgain = celt_rsqrt_norm(t);
+
+   for (j=0;j<N;j++)
+   {
+      celt_norm r, l;
+      /* Apply mid scaling (side is already scaled) */
+      l = mid * X[j];
+      r = Y[j];
+      X[j] = lgain * (l - r);
+      Y[j] = rgain * (l + r);
+   }
+}
+
 
 /* This function is responsible for encoding and decoding a band for both
    the mono and stereo case. Even in the mono case, it can split the band
    in two and transmit the energy difference with the two half-bands. It
    can be called recursively so bands can end up being split in 8 parts. */
-static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, celt_norm *Y,
+   //I have removed the encoding section as its not needed for me
+static unsigned quant_band(const CELTMode *m, int i, celt_norm *X, celt_norm *Y,
       int N, int b, int spread, int B, int intensity, int tf_change, celt_norm *lowband, ec_ctx *ec,
       int32_t *remaining_bits, int LM, celt_norm *lowband_out, const celt_ener *bandE, int level,
       uint32_t *seed, float gain, celt_norm *lowband_scratch, int fill)
@@ -62,11 +276,7 @@ static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, c
    float mid=0, side=0;
    int longBlocks;
    unsigned cm=0;
-#ifdef RESYNTH
    int resynth = 1;
-#else
-   int resynth = !encode;
-#endif
 
    longBlocks = B0==1;
 
@@ -84,13 +294,9 @@ static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, c
          int sign=0;
          if (*remaining_bits>=1<<BITRES)
          {
-            if (encode)
-            {
-               sign = x[0]<0;
-               ec_enc_bits(ec, sign, 1);
-            } else {
-               sign = ec_dec_bits(ec, 1);
-            }
+           
+            sign = ec_dec_bits(ec, 1);
+            
             *remaining_bits -= 1<<BITRES;
             b-=1<<BITRES;
          }
@@ -99,7 +305,7 @@ static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, c
          x = Y;
       } while (++c<1+stereo);
       if (lowband_out)
-         lowband_out[0] = SHR16(X[0],4);
+         lowband_out[0] = X[0];
       return 1;
    }
 
@@ -123,8 +329,7 @@ static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, c
          static const unsigned char bit_interleave_table[16]={
            0,1,1,1,2,3,3,3,2,3,3,3,2,3,3,3
          };
-         if (encode)
-            haar1(X, N>>k, 1<<k);
+         
          if (lowband)
             haar1(lowband, N>>k, 1<<k);
          fill = bit_interleave_table[fill&0xF]|bit_interleave_table[fill>>4]<<2;
@@ -135,8 +340,7 @@ static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, c
       /* Increasing the time resolution */
       while ((N_B&1) == 0 && tf_change<0)
       {
-         if (encode)
-            haar1(X, N_B, B);
+         
          if (lowband)
             haar1(lowband, N_B, B);
          fill |= fill<<B;
@@ -151,8 +355,7 @@ static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, c
       /* Reorganize the samples in time order instead of frequency order */
       if (B0>1)
       {
-         if (encode)
-            deinterleave_hadamard(X, N_B>>recombine, B0<<recombine, longBlocks);
+         
          if (lowband)
             deinterleave_hadamard(lowband, N_B>>recombine, B0<<recombine, longBlocks);
       }
@@ -188,19 +391,10 @@ static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, c
       qn = compute_qn(N, b, offset, pulse_cap, stereo);
       if (stereo && i>=intensity)
          qn = 1;
-      if (encode)
-      {
-         /* theta is the atan() of the ratio between the (normalized)
-            side and mid. With just that parameter, we can re-scale both
-            mid and side because we know that 1) they have unit norm and
-            2) they are orthogonal. */
-         itheta = stereo_itheta(X, Y, stereo, N);
-      }
       tell = ec_tell_frac(ec);
       if (qn!=1)
       {
-         if (encode)
-            itheta = (itheta*qn+8192)>>14;
+        
 
          /* Entropy coding of the angle. We use a uniform pdf for the
             time split, a step for stereo, and a triangular one for the rest. */
@@ -211,88 +405,52 @@ static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, c
             int x0 = qn/2;
             int ft = p0*(x0+1) + x0;
             /* Use a probability of p0 up to itheta=8192 and then use 1 after */
-            if (encode)
-            {
-               ec_encode(ec,x<=x0?p0*x:(x-1-x0)+(x0+1)*p0,x<=x0?p0*(x+1):(x-x0)+(x0+1)*p0,ft);
-            } else {
-               int fs;
-               fs=ec_decode(ec,ft);
-               if (fs<(x0+1)*p0)
-                  x=fs/p0;
-               else
-                  x=x0+1+(fs-(x0+1)*p0);
-               ec_dec_update(ec,x<=x0?p0*x:(x-1-x0)+(x0+1)*p0,x<=x0?p0*(x+1):(x-x0)+(x0+1)*p0,ft);
-               itheta = x;
-            }
+            
+            int fs;
+            fs=ec_decode(ec,ft);
+            if (fs<(x0+1)*p0)
+               x=fs/p0;
+            else
+               x=x0+1+(fs-(x0+1)*p0);
+            ec_dec_update(ec,x<=x0?p0*x:(x-1-x0)+(x0+1)*p0,x<=x0?p0*(x+1):(x-x0)+(x0+1)*p0,ft);
+            itheta = x;
          } else if (B0>1 || stereo) {
             /* Uniform pdf */
-            if (encode)
-               ec_enc_uint(ec, itheta, qn+1);
-            else
-               itheta = ec_dec_uint(ec, qn+1);
+            itheta = ec_dec_uint(ec, qn+1);
          } else {
             int fs=1, ft;
             ft = ((qn>>1)+1)*((qn>>1)+1);
-            if (encode)
+            /* Triangular pdf */
+            int fl=0;
+            int fm;
+            fm = ec_decode(ec, ft);
+
+            if (fm < ((qn>>1)*((qn>>1) + 1)>>1))
             {
-               int fl;
-
-               fs = itheta <= (qn>>1) ? itheta + 1 : qn + 1 - itheta;
-               fl = itheta <= (qn>>1) ? itheta*(itheta + 1)>>1 :
-                ft - ((qn + 1 - itheta)*(qn + 2 - itheta)>>1);
-
-               ec_encode(ec, fl, fl+fs, ft);
-            } else {
-               /* Triangular pdf */
-               int fl=0;
-               int fm;
-               fm = ec_decode(ec, ft);
-
-               if (fm < ((qn>>1)*((qn>>1) + 1)>>1))
-               {
-                  itheta = (isqrt32(8*(uint32_t)fm + 1) - 1)>>1;
-                  fs = itheta + 1;
-                  fl = itheta*(itheta + 1)>>1;
-               }
-               else
-               {
-                  itheta = (2*(qn + 1)
-                   - isqrt32(8*(uint32_t)(ft - fm - 1) + 1))>>1;
-                  fs = qn + 1 - itheta;
-                  fl = ft - ((qn + 1 - itheta)*(qn + 2 - itheta)>>1);
-               }
-
-               ec_dec_update(ec, fl, fl+fs, ft);
+               itheta = (isqrt32(8*(uint32_t)fm + 1) - 1)>>1;
+               fs = itheta + 1;
+               fl = itheta*(itheta + 1)>>1;
             }
+            else
+            {
+               itheta = (2*(qn + 1)
+                  - isqrt32(8*(uint32_t)(ft - fm - 1) + 1))>>1;
+               fs = qn + 1 - itheta;
+               fl = ft - ((qn + 1 - itheta)*(qn + 2 - itheta)>>1);
+            }
+
+            ec_dec_update(ec, fl, fl+fs, ft);
+         
          }
          itheta = (int32_t)itheta*16384/qn;
-         if (encode && stereo)
-         {
-            if (itheta==0)
-               intensity_stereo(m, X, Y, bandE, i, N);
-            else
-               stereo_split(X, Y, N);
-         }
+         
          /* NOTE: Renormalising X and Y *may* help fixed-point a bit at very high rate.
                   Let's do that at higher complexity */
       } else if (stereo) {
-         if (encode)
-         {
-            inv = itheta > 8192;
-            if (inv)
-            {
-               int j;
-               for (j=0;j<N;j++)
-                  Y[j] = -Y[j];
-            }
-            intensity_stereo(m, X, Y, bandE, i, N);
-         }
+         
          if (b>2<<BITRES && *remaining_bits > 2<<BITRES)
          {
-            if (encode)
-               ec_enc_bit_logp(ec, inv, 2);
-            else
-               inv = ec_dec_bit_logp(ec, 2);
+            inv = ec_dec_bit_logp(ec, 2);
          } else
             inv = 0;
          itheta = 0;
@@ -318,16 +476,12 @@ static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, c
          iside = bitexact_cos(16384-itheta);
          /* This is the mid vs side allocation that minimizes squared error
             in that band. */
-         delta = FRAC_MUL16((N-1)<<7,bitexact_log2tan(iside,imid));
+         delta = ((N-1)<<7 * bitexact_log2tan(iside,imid));
       }
 
-#ifdef FIXED_POINT
-      mid = imid;
-      side = iside;
-#else
+
       mid = (1.f/32768)*imid;
       side = (1.f/32768)*iside;
-#endif
 
       /* This is a special case for N=2 that only works for stereo and takes
          advantage of the fact that mid and side are orthogonal to encode
@@ -350,19 +504,14 @@ static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, c
          y2 = c ? X : Y;
          if (sbits)
          {
-            if (encode)
-            {
-               /* Here we only need to encode a sign for the side */
-               sign = x2[0]*y2[1] - x2[1]*y2[0] < 0;
-               ec_enc_bits(ec, sign, 1);
-            } else {
-               sign = ec_dec_bits(ec, 1);
-            }
+            
+            sign = ec_dec_bits(ec, 1);
+            
          }
          sign = 1-2*sign;
          /* We use orig_fill here because we want to fold the side, but if
              itheta==16384, we'll have cleared the low bits of fill. */
-         cm = quant_band(encode, m, i, x2, NULL, N, mbits, spread, B, intensity, tf_change, lowband, ec, remaining_bits, LM, lowband_out, NULL, level, seed, gain, lowband_scratch, orig_fill);
+         cm = quant_band(m, i, x2, NULL, N, mbits, spread, B, intensity, tf_change, lowband, ec, remaining_bits, LM, lowband_out, NULL, level, seed, gain, lowband_scratch, orig_fill);
          /* We don't split N=2 bands, so cm is either 1 or 0 (for a fold-collapse),
              and there's no need to worry about mixing with the other channel. */
          y2[0] = -sign*x2[1];
@@ -370,16 +519,16 @@ static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, c
          if (resynth)
          {
             celt_norm tmp;
-            X[0] = MULT16_16_Q15(mid, X[0]);
-            X[1] = MULT16_16_Q15(mid, X[1]);
-            Y[0] = MULT16_16_Q15(side, Y[0]);
-            Y[1] = MULT16_16_Q15(side, Y[1]);
+            X[0] = (mid * X[0]);
+            X[1] = (mid * X[1]);
+            Y[0] = (side * Y[0]);
+            Y[1] = (side * Y[1]);
             tmp = X[0];
-            X[0] = SUB16(tmp,Y[0]);
-            Y[0] = ADD16(tmp,Y[0]);
+            X[0] = (tmp - Y[0]);
+            Y[0] = (tmp + Y[0]);
             tmp = X[1];
-            X[1] = SUB16(tmp,Y[1]);
-            Y[1] = ADD16(tmp,Y[1]);
+            X[1] = (tmp - Y[1]);
+            Y[1] = (tmp + Y[1]);
          }
       } else {
          /* "Normal" split code */
@@ -417,32 +566,32 @@ static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, c
          {
             /* In stereo mode, we do not apply a scaling to the mid because we need the normalized
                mid for folding later */
-            cm = quant_band(encode, m, i, X, NULL, N, mbits, spread, B, intensity, tf_change,
+            cm = quant_band(m, i, X, NULL, N, mbits, spread, B, intensity, tf_change,
                   lowband, ec, remaining_bits, LM, next_lowband_out1,
-                  NULL, next_level, seed, stereo ? 1.0f : MULT16_16_P15(gain,mid), lowband_scratch, fill);
+                  NULL, next_level, seed, stereo ? 1.0f : (gain * mid), lowband_scratch, fill);
             rebalance = mbits - (rebalance-*remaining_bits);
             if (rebalance > 3<<BITRES && itheta!=0)
                sbits += rebalance - (3<<BITRES);
 
             /* For a stereo split, the high bits of fill are always zero, so no
                folding will be done to the side. */
-            cm |= quant_band(encode, m, i, Y, NULL, N, sbits, spread, B, intensity, tf_change,
+            cm |= quant_band(m, i, Y, NULL, N, sbits, spread, B, intensity, tf_change,
                   next_lowband2, ec, remaining_bits, LM, NULL,
-                  NULL, next_level, seed, MULT16_16_P15(gain,side), NULL, fill>>B)<<((B0>>1)&(stereo-1));
+                  NULL, next_level, seed, (gain * side), NULL, fill>>B)<<((B0>>1)&(stereo-1));
          } else {
             /* For a stereo split, the high bits of fill are always zero, so no
                folding will be done to the side. */
-            cm = quant_band(encode, m, i, Y, NULL, N, sbits, spread, B, intensity, tf_change,
+            cm = quant_band(m, i, Y, NULL, N, sbits, spread, B, intensity, tf_change,
                   next_lowband2, ec, remaining_bits, LM, NULL,
-                  NULL, next_level, seed, MULT16_16_P15(gain,side), NULL, fill>>B)<<((B0>>1)&(stereo-1));
+                  NULL, next_level, seed, (gain * side), NULL, fill>>B)<<((B0>>1)&(stereo-1));
             rebalance = sbits - (rebalance-*remaining_bits);
             if (rebalance > 3<<BITRES && itheta!=16384)
                mbits += rebalance - (3<<BITRES);
             /* In stereo mode, we do not apply a scaling to the mid because we need the normalized
                mid for folding later */
-            cm |= quant_band(encode, m, i, X, NULL, N, mbits, spread, B, intensity, tf_change,
+            cm |= quant_band(m, i, X, NULL, N, mbits, spread, B, intensity, tf_change,
                   lowband, ec, remaining_bits, LM, next_lowband_out1,
-                  NULL, next_level, seed, stereo ? 1.0f : MULT16_16_P15(gain,mid), lowband_scratch, fill);
+                  NULL, next_level, seed, stereo ? 1.0f : (gain * mid), lowband_scratch, fill);
          }
       }
 
@@ -466,16 +615,9 @@ static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, c
          int K = get_pulses(q);
 
          /* Finally do the actual quantization */
-         if (encode)
-         {
-            cm = alg_quant(X, N, K, spread, B, ec
-#ifdef RESYNTH
-                 , gain
-#endif
-                 );
-         } else {
-            cm = alg_unquant(X, N, K, spread, B, ec, gain);
-         }
+         
+         cm = alg_unquant(X, N, K, spread, B, ec, gain);
+         
       } else {
          /* If there's no pulse, fill the band anyway */
          int j;
@@ -507,7 +649,7 @@ static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, c
                      float tmp;
                      *seed = celt_lcg_rand(*seed);
                      /* About 48 dB below the "normal" folding level */
-                     tmp = QCONST16(1.0f/256, 10);
+                     tmp = 1.0f/256;
                      tmp = (*seed)&0x8000 ? tmp : -tmp;
                      X[j] = lowband[j]+tmp;
                   }
@@ -567,9 +709,9 @@ static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, c
          {
             int j;
             float n;
-            n = celt_sqrt(SHL32(EXTEND32(N0),22));
+            n = celt_sqrt(N0);
             for (j=0;j<N0;j++)
-               lowband_out[j] = MULT16_16_Q15(n,X[j]);
+               lowband_out[j] = n * X[j];
          }
          cm &= (1<<B)-1;
       }
@@ -583,7 +725,7 @@ static unsigned quant_band(int encode, const CELTMode *m, int i, celt_norm *X, c
 
 
 
-void quant_all_bands(int encode, const CELTMode *m, int start, int end,
+void quant_all_bands(const CELTMode *m, int start, int end,
       celt_norm *X_, celt_norm *Y_, unsigned char *collapse_masks, const celt_ener *bandE, int *pulses,
       int shortBlocks, int spread, int dual_stereo, int intensity, int *tf_res,
       int32_t total_bits, int32_t balance, ec_ctx *ec, int LM, int codedBands, uint32_t *seed)
@@ -600,7 +742,7 @@ void quant_all_bands(int encode, const CELTMode *m, int start, int end,
    int update_lowband = 1;
    int C = Y_ != NULL ? 2 : 1;
 
-   int resynth = !encode;
+   int resynth = 1;
 
    SAVE_STACK;
 
@@ -690,14 +832,14 @@ void quant_all_bands(int encode, const CELTMode *m, int start, int end,
       }
       if (dual_stereo)
       {
-         x_cm = quant_band(encode, m, i, X, NULL, N, b/2, spread, B, intensity, tf_change,
+         x_cm = quant_band(m, i, X, NULL, N, b/2, spread, B, intensity, tf_change,
                effective_lowband != -1 ? norm+effective_lowband : NULL, ec, &remaining_bits, LM,
                norm+M*eBands[i], bandE, 0, seed, 1.0f, lowband_scratch, x_cm);
-         y_cm = quant_band(encode, m, i, Y, NULL, N, b/2, spread, B, intensity, tf_change,
+         y_cm = quant_band(m, i, Y, NULL, N, b/2, spread, B, intensity, tf_change,
                effective_lowband != -1 ? norm2+effective_lowband : NULL, ec, &remaining_bits, LM,
                norm2+M*eBands[i], bandE, 0, seed, 1.0f, lowband_scratch, y_cm);
       } else {
-         x_cm = quant_band(encode, m, i, X, Y, N, b, spread, B, intensity, tf_change,
+         x_cm = quant_band(m, i, X, Y, N, b, spread, B, intensity, tf_change,
                effective_lowband != -1 ? norm+effective_lowband : NULL, ec, &remaining_bits, LM,
                norm+M*eBands[i], bandE, 0, seed, 1.0f, lowband_scratch, x_cm|y_cm);
          y_cm = x_cm;

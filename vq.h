@@ -44,6 +44,8 @@
 #include "entcode.h"
 #include "modes.h"
 #include "stack.h"
+#include "cwrs.h"
+#include "mathop.h"
 
 /** Algebraic pulse decoder
  * @param x Decoded normalised spectrum (returned)
@@ -54,9 +56,9 @@
  * @ret A mask indicating which blocks in the band received pulses
  */
 unsigned alg_unquant(celt_norm *X, int N, int K, int spread, int B,
-      ec_dec *dec, opus_val16 gain);
+      ec_dec *dec, float gain);
 
-void renormalise_vector(celt_norm *X, int N, opus_val16 gain);
+void renormalise_vector(celt_norm *X, int N, float gain);
 
 int stereo_itheta(celt_norm *X, celt_norm *Y, int stereo, int N);
 

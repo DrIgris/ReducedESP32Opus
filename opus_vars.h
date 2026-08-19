@@ -42,6 +42,7 @@
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #undef CHAR_BIT
 #define CHAR_BIT __CHAR_BIT__
@@ -103,9 +104,13 @@ static const unsigned char tapset_icdf[3]={2,1,0};
 //functions
    //math
 
+#define EC_MINI(_a,_b)      ((_a)+(((_b)-(_a))&-((_b)<(_a))))
+
 #define MAC16_16(c,a,b)     ((c)+(float)(a)*(float)(b))
 
 #define SCALEOUT(a)     ((a)*(1/CELT_SIG_SCALE))
+
+
 
 
 //max and min for general ints
@@ -127,10 +132,6 @@ static const unsigned char tapset_icdf[3]={2,1,0};
 #define OPUS_CLEAR(dst, n) (memset((dst), 0, (n)*sizeof(*(dst)))) //just sets all bits of specified memory to 0 
 
 
-#define celt_sqrt(x) ((float)sqrt(x))
-#define celt_rsqrt(x) (1.f/celt_sqrt(x))
-#define celt_rsqrt_norm(x) (celt_rsqrt(x))
-
 //static inline functions
 static inline int16_t FLOAT2INT16(float x)
 {
@@ -140,26 +141,6 @@ static inline int16_t FLOAT2INT16(float x)
    return (int16_t)((int)(floor(.5+x)));
 }
 
-/** Base-2 exponential approximation (2^x). */
-static inline float celt_exp2(float x)
-{
-   int integer;
-   float frac;
-   union {
-      float f;
-      uint32_t i;
-   } res;
-   integer = floor(x);
-   if (integer < -50)
-      return 0;
-   frac = x-integer;
-   /* K0 = 1, K1 = log(2), K2 = 3-4*log(2), K3 = 3*log(2) - 2 */
-   res.f = 0.99992522f + frac * (0.69583354f
-           + frac * (0.22606716f + 0.078024523f*frac));
-   res.i = (res.i + (integer<<23)) & 0x7fffffff;
-   return res.f;
-}
-
 static inline int align(int i)
 {
     return (i+sizeof(void *)-1)&-sizeof(void *);
@@ -167,11 +148,14 @@ static inline int align(int i)
 
 
 //error checks
+#define celt_fatal(str) _celt_fatal(str, __FILE__, __LINE__);
+
 static inline void _celt_fatal(const char *str, const char *file, int line)
 {
    fprintf (stderr, "Fatal (internal) error in %s, line %d: %s\n", file, line, str);
    abort();
 }
+
 #define celt_assert(cond) {if (!(cond)) {celt_fatal("assertion failed: " #cond);}}
 #define celt_assert2(cond, message) {if (!(cond)) {celt_fatal("assertion failed: " #cond "\n" message);}}
 

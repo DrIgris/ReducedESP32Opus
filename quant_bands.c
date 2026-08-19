@@ -38,6 +38,7 @@
 /* Mean energy in each band quantized in Q6 and converted back to float */
 
 #include "quant_bands.h"
+#include "rate.h"
 
 static const float eMeans[25] = {
       6.437500f, 6.250000f, 5.750000f, 5.312500f, 5.062500f,
@@ -182,4 +183,66 @@ void unquant_coarse_energy(const CELTMode *m, int start, int end, float *oldEBan
          prev[c] = prev[c] + q - (beta*q); //overwrites prev to prev + q - beta_coef * q 
       } while (++c < C);
    }
+}
+
+void unquant_fine_energy(const CELTMode *m, int start, int end, float *oldEBands, int *fine_quant, ec_dec *dec, int C)
+{
+   int i, c;
+   /* Decode finer resolution */
+   for (i=start;i<end;i++)
+   {
+      if (fine_quant[i] <= 0)
+         continue;
+      c=0;
+      do {
+         int q2;
+         float offset;
+         q2 = ec_dec_bits(dec, fine_quant[i]);
+         offset = (q2+.5f)*(1<<(14-fine_quant[i]))*(1.f/16384) - .5f;
+         oldEBands[i+c*m->nbEBands] += offset;
+      } while (++c < C);
+   }
+}
+
+void unquant_energy_finalise(const CELTMode *m, int start, int end, float *oldEBands, int *fine_quant,  int *fine_priority, int bits_left, ec_dec *dec, int C)
+{ //This and the fine energy quant are just about improving the sound and steps between the bands. Coarse energy quant gives big integer steps, fine makes them more defined, and this takes any remaining bits in the packet to add more refinement
+   int i, prio, c;
+
+   /* Use up the remaining bits */
+   for (prio=0;prio<2;prio++)
+   {
+      for (i=start;i<end && bits_left>=C ;i++)
+      {
+         if (fine_quant[i] >= MAX_FINE_BITS || fine_priority[i]!=prio)
+            continue;
+         c=0;
+         do {
+            int q2;
+            float offset;
+            q2 = ec_dec_bits(dec, 1);
+
+            offset = (q2-.5f)*(1<<(14-fine_quant[i]-1))*(1.f/16384);
+            oldEBands[i+c*m->nbEBands] += offset;
+            bits_left--;
+         } while (++c < C);
+      }
+   }
+}
+
+void log2Amp(const CELTMode *m, int start, int end,
+      celt_ener *eBands, const float *oldEBands, int C)
+{
+   int c, i;
+   c=0;
+   do {
+      for (i=0;i<start;i++)
+         eBands[i+c*m->nbEBands] = 0;
+      for (;i<end;i++)
+      {
+         float lg = (oldEBands[i+c*m->nbEBands] + (float)eMeans[i]);
+         eBands[i+c*m->nbEBands] = celt_exp2(lg);
+      }
+      for (;i<m->nbEBands;i++)
+         eBands[i+c*m->nbEBands] = 0;
+   } while (++c < C);
 }

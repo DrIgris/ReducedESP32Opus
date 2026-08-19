@@ -87,6 +87,52 @@ void ec_dec_init(ec_dec *_this,unsigned char *_buf,uint32_t _storage){
   ec_dec_normalize(_this);
 }
 
+unsigned ec_decode(ec_dec *_this,unsigned _ft){
+  unsigned s;
+  _this->ext=_this->rng/_ft; //splits rng into equal parts determined by the param. this creates equal probability splits
+  s=(unsigned)(_this->val/_this->ext); //int division to find which split val is in; in simpler numbers lets say rng = 20 ft = 4 so ext = 5. if val is 0-4, 0->4 / 5 = 0, 5->9/5 = 1. 20/5 = 4etc.
+  return _ft-EC_MINI(s+1,_ft); //s in an index so we add 1 to get to proper arithmetic. EC_MINI simply clamps the range to be between 0 and ft.
+  /*
+  the return flips the index. so if s is the highest pocket, the EC_MINI will return ft, ft-ft=0 so the highest slot is index 0.
+  this is because range coding puts highest probability at the top of the range.
+  [ 1 2 3 4 ] [ 5 6 7 8 ] [ 9 10 11 12 ] [ 13 14 15 16 ] [ 17 18 19 20 ]
+      ^0           ^1           ^2              ^3              ^4
+      ft = 4 so if s = 4 EC_MINI(5,4) = 4.
+      4-4 = 0
+      ft = 4 so if s = 1 EC_MINI(2,4) = 2
+      4-2 = 2
+  */
+  /*
+  EC_MINI is pretty beautiful here, the main component comes in this bitwise & section
+  a+((b-a)&-(b < a))
+  b < a gives 1 if true, 0 if false. Then we negate it. so either we get all 0s 00000000, or all 1s 11111111 (because 2 complement)
+  if b<a is false (b is greater than a) we have whatever binary val b-a is & 00000000 which clears all bits so it returns a + 0 = a
+  if b<a is true we have whatever binary val b-a is & 11111111 which leaves it unchanged so it returns a + b-a = b
+  */
+}
+
+unsigned ec_decode_bin(ec_dec *_this,unsigned _bits){
+   unsigned s;
+   _this->ext=_this->rng>>_bits;
+   s=(unsigned)(_this->val/_this->ext);
+   return (1U<<_bits)-EC_MINI(s+1U,1U<<_bits);
+}
+
+void ec_dec_update(ec_dec *_this,unsigned _fl,unsigned _fh,unsigned _ft){
+  //fl is the lower bound of the slice val fell in, fh is the non-inclusive upper bound (the start of the next slice to be exact in most cases)
+  uint32_t s;
+  s=(_this->ext * _ft-_fh); //calculates how many slices are in our range, then multiplies by ext which is the size of each slice to get the total size in the range coders abstract units
+  _this->val-=s; //Changes val to be the offset from the start of the slice
+  _this->rng=_fl>0?(_this->ext * _fh-_fl):_this->rng-s; //if we are not at the bottom slice, the range is just the number of units that our fl -> fh range exists in
+  /*
+  if we are at the bottom, we instead offset range from the first slice like we did to val. 
+  This is because integer division truncates certain end values that accumalte in the first slice. 
+  Creating a minute difference in size that can cause shifting over decoding if not accounted for. 
+  */
+  ec_dec_normalize(_this);
+}
+
+
 int ec_dec_bit_logp(ec_dec *_this,unsigned _logp){
   uint32_t r;
   uint32_t d;
@@ -188,6 +234,36 @@ int ec_dec_icdf(ec_dec *_this,const unsigned char *_icdf,unsigned _ftb){
   _this->rng=t-s; // rebases range to be [0, t-s) instead of [s, t)
   ec_dec_normalize(_this);
   return ret;
+}
+
+uint32_t ec_tell_frac(ec_ctx *_this){
+  uint32_t nbits;
+  uint32_t r;
+  int         l;
+  int         i;
+  /*To handle the non-integral number of bits still left in the encoder/decoder
+     state, we compute the worst-case number of bits of val that must be
+     encoded to ensure that the value is inside the range for any possible
+     subsequent bits.
+    The computation here is independent of val itself (the decoder does not
+     even track that value), even though the real number of bits used after
+     ec_enc_done() may be 1 smaller if rng is a power of two and the
+     corresponding trailing bits of val are all zeros.
+    If we did try to track that special case, then coding a value with a
+     probability of 1/(1<<n) might sometimes appear to use more than n bits.
+    This may help explain the surprising result that a newly initialized
+     encoder or decoder claims to have used 1 bit.*/
+  nbits=_this->nbits_total<<BITRES;
+  l=EC_ILOG(_this->rng);
+  r=_this->rng>>(l-16);
+  for(i=BITRES;i-->0;){
+    int b;
+    r=r*r>>15;
+    b=(int)(r>>16);
+    l=l<<1|b;
+    r>>=b;
+  }
+  return nbits-l;
 }
 
 

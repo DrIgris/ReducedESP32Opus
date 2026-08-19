@@ -41,7 +41,11 @@
 #include "stack.h"
 #include "entcode.h"
 #include "rate.h"
-#include "opus_vars.h"
+#include "mathop.h"
+#include "vq.h"
+
+
+void haar1(celt_norm *X, int N0, int stride);
 
 
 /** Quantisation/encoding of the residual spectrum
@@ -50,11 +54,11 @@
  * @param total_bits Total number of bits that can be used for the frame (including the ones already spent)
  * @param enc Entropy encoder
  */
-void quant_all_bands(int encode, const CELTMode *m, int start, int end,
+void quant_all_bands(const CELTMode *m, int start, int end,
       celt_norm * X, celt_norm * Y, unsigned char *collapse_masks, const celt_ener *bandE, int *pulses,
       int time_domain, int fold, int dual_stereo, int intensity, int *tf_res,
       int32_t total_bits, int32_t balance, ec_ctx *ec, int M, int codedBands, uint32_t *seed);
-
+   
 void anti_collapse(const CELTMode *m, celt_norm *X_, unsigned char *collapse_masks, int LM, int C, int size,
       int start, int end, float *logE, float *prev1logE,
       float *prev2logE, int *pulses, uint32_t seed);
@@ -65,5 +69,8 @@ void anti_collapse(const CELTMode *m, celt_norm *X_, unsigned char *collapse_mas
  * @param bands Square root of the energy for each band
  */
 void denormalise_bands(const CELTMode *m, const celt_norm * restrict X, celt_sig * restrict freq, const celt_ener *bandE, int end, int C, int M);
+
+uint32_t celt_lcg_rand(uint32_t seed);
+
 
 #endif

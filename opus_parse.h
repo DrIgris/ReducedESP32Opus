@@ -17,8 +17,8 @@ int readTags(FILE* f);
 
 int readOggs(FILE* f, Oggs* o);
 
-int readPackets(FILE* f);
+int readPackets(FILE* f, FILE* out);
 
-int decodeFile(FILE* f);
+int decodeFile(FILE* f,  FILE* out);
 
 #endif

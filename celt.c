@@ -464,13 +464,13 @@ int celt_decode_with_ec(CELTDecoder * restrict st, const unsigned char *data, in
    bits -= anti_collapse_rsv;
    codedBands = compute_allocation(st->mode, st->start, st->end, offsets, cap,
          alloc_trim, &intensity, &dual_stereo, bits, &balance, pulses,
-         fine_quant, fine_priority, C, LM, dec, 0, 0);
+         fine_quant, fine_priority, C, LM, dec, 0);
 
    unquant_fine_energy(st->mode, st->start, st->end, oldBandE, fine_quant, dec, C);
 
    /* Decode fixed codebook */
    ALLOC(collapse_masks, C*st->mode->nbEBands, unsigned char);
-   quant_all_bands(0, st->mode, st->start, st->end, X, C==2 ? X+N : NULL, collapse_masks,
+   quant_all_bands(st->mode, st->start, st->end, X, C==2 ? X+N : NULL, collapse_masks,
          NULL, pulses, shortBlocks, spread_decision, dual_stereo, intensity, tf_res,
          len*(8<<BITRES)-anti_collapse_rsv, balance, dec, LM, codedBands, &st->rng);
 

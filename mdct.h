@@ -53,6 +53,7 @@
 #include "modes.h"
 #include "stack.h"
 #include "opus_vars.h"
+#include "mathop.h"
 
 void opus_ifft(const kiss_fft_state *cfg,const kiss_fft_cpx *fin,kiss_fft_cpx *fout);
 

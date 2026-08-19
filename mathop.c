@@ -1,6 +1,10 @@
-/* Copyright (c) 2007-2012 IETF Trust, CSIRO, Xiph.Org Foundation,
-                           Gregory Maxwell. All rights reserved.
-   Written by Jean-Marc Valin and Gregory Maxwell */
+/* Copyright (c) 2002-2012 IETF Trust, Jean-Marc Valin,
+                           CSIRO, Xiph.Org Foundation. All rights reserved.
+   Written by Jean-Marc Valin */
+/**
+   @file mathops.h
+   @brief Various math functions
+*/
 /*
 
    This file is extracted from RFC6716. Please see that RFC for additional
@@ -35,28 +39,33 @@
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "opus_parse.h"
-#include <stdio.h>
+#include "mathop.h"
 
 
-int main(void) {
-   FILE *f;
-   FILE *out;
-
-   out = fopen("out.pcm", "w");
-   f = fopen("ByTheLagoon.opus", "r");
-
-   if (f == NULL) {
-      printf("Error: Could not open file for read.\n");
-      return 1; 
-   }
-
-   if (out == NULL) {
-      printf("Error: Could not open file for write.\n");
-      return 2; 
-   }
-
-   decodeFile(f, out);
-
-   return 0;
+/*Compute floor(sqrt(_val)) with exact arithmetic.
+  This has been tested on all possible 32-bit inputs.*/
+unsigned isqrt32(uint32_t _val){
+  unsigned b;
+  unsigned g;
+  int      bshift;
+  /*Uses the second method from
+     http://www.azillionmonkeys.com/qed/sqroot.html
+    The main idea is to search for the largest binary digit b such that
+     (g+b)*(g+b) <= _val, and add it to the solution g.*/
+  g=0;
+  bshift=(EC_ILOG(_val)-1)>>1;
+  b=1U<<bshift;
+  do{
+    uint32_t t;
+    t=(((uint32_t)g<<1)+b)<<bshift;
+    if(t<=_val){
+      g+=b;
+      _val-=t;
+    }
+    b>>=1;
+    bshift--;
+  }
+  while(bshift>=0);
+  return g;
 }
+

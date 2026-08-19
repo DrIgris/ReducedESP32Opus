@@ -41,6 +41,9 @@
 #include "opus_vars.h"
 #include "celt.h"
 
+char *global_stack=0;
+char *global_stack_top=0;
+
 
 int opus_decoder_get_size(int channels)
 {

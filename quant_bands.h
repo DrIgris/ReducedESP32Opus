@@ -40,11 +40,10 @@
 #define QUANT_BANDS
 
 #include "modes.h"
-#include "entcode.h"
-//#include "mathops.h"
+#include "laplace.h"
 
-void amp2Log2(const CELTMode *m, int effEnd, int end,
-      celt_ener *bandE, float *bandLogE, int C);
+// void amp2Log2(const CELTMode *m, int effEnd, int end,
+//       celt_ener *bandE, float *bandLogE, int C);
 
 void log2Amp(const CELTMode *m, int start, int end,
       celt_ener *eBands, const float *oldEBands, int C);
