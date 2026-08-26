@@ -11,7 +11,7 @@ endif
 .RECIPEPREFIX = >
 
 COMPILER := gcc
-CCOPTIONS := -Wall -MMD -MP -std=c99
+CCOPTIONS := -Wall -MMD -MP -std=c99 -g
 
 PCM_OUTPUT_DIR := pcms
 OBJECT_DIR := objs

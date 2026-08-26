@@ -46,6 +46,8 @@ uint16_t preskip;
 float pcm[MAX_FRAME_SIZE * CHANNELS];
 OpusDecoder* OpDec;
 
+int deb = 0;
+
 //functions
 
 int readHead(FILE* f){
@@ -116,8 +118,14 @@ int readPackets(FILE* f, FILE* out) {
         pack_len += o.segment_table[i++];
 
         fread(packet_buf, 1, pack_len, f);
-        int num_samples = opus_decode(OpDec, packet_buf, pack_len, pcm);
+        if (deb < 200)
+            printf("pack_len=%d first_bytes=%02x %02x %02x %02x\n",
+       pack_len, packet_buf[0], packet_buf[1], packet_buf[2], packet_buf[3]);
 
+        int num_samples = opus_decode(OpDec, packet_buf, pack_len, pcm);
+        if (deb < 200)
+            printf("num_samples=%d pcm[0]=%f pcm[1]=%f\n", num_samples, pcm[0], pcm[1]);
+        deb++;
         float *out_ptr = pcm;
         int out_len = num_samples;
         if(preskip > 0) {
@@ -135,7 +143,10 @@ int readPackets(FILE* f, FILE* out) {
 }
 
 int decodeFile(FILE* f, FILE* out) { //open file in SD card manager file and pass into function
-    
+    int* error = 0;
+    OpDec = opus_decoder_create(SAMPLE_RATE, CHANNELS, error);
+    if(error == OPUS_ALLOC_FAIL)
+        return 1;
     
     readHead(f);
     readTags(f);
@@ -145,3 +156,4 @@ int decodeFile(FILE* f, FILE* out) { //open file in SD card manager file and pas
     }
     return 0;
 }
+

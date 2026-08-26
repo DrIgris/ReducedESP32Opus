@@ -44,50 +44,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#undef CHAR_BIT
-#define CHAR_BIT __CHAR_BIT__
-
-
-//return vals
-/** No error @hideinitializer*/
-#define OPUS_OK                0
-/** One or more invalid/out of range arguments @hideinitializer*/
-#define OPUS_BAD_ARG          -1
-/** The mode struct passed is invalid @hideinitializer*/
-#define OPUS_BUFFER_TOO_SMALL -2
-/** An internal error was detected @hideinitializer*/
-#define OPUS_INTERNAL_ERROR   -3
-/** The compressed data passed is corrupted @hideinitializer*/
-#define OPUS_INVALID_PACKET   -4
-/** Invalid/unsupported request number @hideinitializer*/
-#define OPUS_UNIMPLEMENTED    -5
-/** An encoder or decoder structure is invalid or already freed @hideinitializer*/
-#define OPUS_INVALID_STATE    -6
-/** Memory allocation has failed @hideinitializer*/
-#define OPUS_ALLOC_FAIL       -7
-
-//constants
-#define CELT_SIG_SCALE 32768.f
-#define OPUS_RESET_STATE 4028
-
-#define MAX_PERIOD 1024
-
-#define EPSILON 1e-15f
-
-#define COMBFILTER_MAXPERIOD 1024
-#define COMBFILTER_MINPERIOD 15
-
-#define SPREAD_NONE       (0)
-#define SPREAD_LIGHT      (1)
-#define SPREAD_NORMAL     (2)
-#define SPREAD_AGGRESSIVE (3)
-static const unsigned char trim_icdf[11] = {126, 124, 119, 109, 87, 41, 19, 9, 4, 2, 0};
-/* Probs: NONE: 21.875%, LIGHT: 6.25%, NORMAL: 65.625%, AGGRESSIVE: 6.25% */
-static const unsigned char spread_icdf[4] = {25, 23, 2, 0};
-static const unsigned char tapset_icdf[3]={2,1,0};
-
-
-
 //Since we know we are downloading the opus file at fullband 48kHz we can set constants for sampling rate etc.
 
 #define SAMPLE_RATE 48000
@@ -100,67 +56,6 @@ static const unsigned char tapset_icdf[3]={2,1,0};
 
 #define START_BAND 0
 #define END_BAND 21
-
-//functions
-   //math
-
-#define EC_MINI(_a,_b)      ((_a)+(((_b)-(_a))&-((_b)<(_a))))
-
-#define MAC16_16(c,a,b)     ((c)+(float)(a)*(float)(b))
-
-#define SCALEOUT(a)     ((a)*(1/CELT_SIG_SCALE))
-
-
-
-
-//max and min for general ints
-#define IMIN(a,b) ((a) < (b) ? (a) : (b))  
-#define IMAX(a,b) ((a) > (b) ? (a) : (b)) 
-
-#define EC_CLZ0    ((int)sizeof(unsigned)*CHAR_BIT)
-#define EC_CLZ(_x) (__builtin_clz(_x))
-/*Note that __builtin_clz is not defined when _x==0, according to the gcc
-   documentation (and that of the BSR instruction that implements it on x86).
-  The majority of the time we can never pass it zero.
-  When we need to, it can be special cased.*/
-#define EC_ILOG(_x) (EC_CLZ0-EC_CLZ(_x))
-
-   //Decoder
-/** Copy n bytes of memory from src to dst, allowing overlapping regions. The 0* term
-    provides compile-time type checking */
-#define OPUS_MOVE(dst, src, n) (memmove((dst), (src), (n)*sizeof(*(dst)) + 0*((dst)-(src)) ))
-#define OPUS_CLEAR(dst, n) (memset((dst), 0, (n)*sizeof(*(dst)))) //just sets all bits of specified memory to 0 
-
-
-//static inline functions
-static inline int16_t FLOAT2INT16(float x)
-{
-   x = x*CELT_SIG_SCALE;
-   x = IMAX(x, -32768);
-   x = IMIN(x, 32767);
-   return (int16_t)((int)(floor(.5+x)));
-}
-
-static inline int align(int i)
-{
-    return (i+sizeof(void *)-1)&-sizeof(void *);
-}
-
-
-//error checks
-#define celt_fatal(str) _celt_fatal(str, __FILE__, __LINE__);
-
-static inline void _celt_fatal(const char *str, const char *file, int line)
-{
-   fprintf (stderr, "Fatal (internal) error in %s, line %d: %s\n", file, line, str);
-   abort();
-}
-
-#define celt_assert(cond) {if (!(cond)) {celt_fatal("assertion failed: " #cond);}}
-#define celt_assert2(cond, message) {if (!(cond)) {celt_fatal("assertion failed: " #cond "\n" message);}}
-
-
-
 
 
 #endif
